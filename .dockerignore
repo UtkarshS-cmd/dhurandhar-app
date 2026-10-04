@@ -1,0 +1,10 @@
+.git
+**/__pycache__
+*.pyc
+backend/.venv
+backend/dhurandhar.db
+backend/.env
+temp
+bat_test.log
+data
+public

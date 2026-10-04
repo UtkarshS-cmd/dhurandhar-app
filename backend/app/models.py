@@ -1,0 +1,168 @@
+
+from datetime import datetime, date, time
+from enum import Enum
+from sqlalchemy import (
+    String, Integer, DateTime, Date, Time, ForeignKey, Numeric, Boolean,
+    UniqueConstraint, Index, Text
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from .db import Base
+
+class SeatCategory(str, Enum):
+    GOLD = "Gold"
+    SILVER = "Silver"
+    BRONZE = "Bronze"
+
+class ShowSeatStatus(str, Enum):
+    AVAILABLE = "AVAILABLE"
+    HELD = "HELD"
+    BOOKED = "BOOKED"
+
+class BookingStatus(str, Enum):
+    HELD = "HELD"
+    CONFIRMED = "CONFIRMED"
+    CANCELLED = "CANCELLED"
+
+class PaymentStatus(str, Enum):
+    PENDING = "PENDING"
+    PAID = "PAID"
+    FAILED = "FAILED"
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    full_name: Mapped[str] = mapped_column(String(120))
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    phone: Mapped[str] = mapped_column(String(20))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    bookings = relationship("Booking", back_populates="user")
+
+class Movie(Base):
+    __tablename__ = "movies"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200), unique=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    shows = relationship("Show", back_populates="movie")
+
+class City(Base):
+    __tablename__ = "cities"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    theaters = relationship("Theater", back_populates="city")
+
+class Theater(Base):
+    __tablename__ = "theaters"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    city_id: Mapped[int] = mapped_column(ForeignKey("cities.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    address: Mapped[str] = mapped_column(String(300))
+    city = relationship("City", back_populates="theaters")
+    screens = relationship("Screen", back_populates="theater", cascade="all, delete-orphan")
+
+class Screen(Base):
+    __tablename__ = "screens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    theater_id: Mapped[int] = mapped_column(ForeignKey("theaters.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    theater = relationship("Theater", back_populates="screens")
+    seats = relationship("Seat", back_populates="screen", cascade="all, delete-orphan")
+    shows = relationship("Show", back_populates="screen")
+
+class Seat(Base):
+    __tablename__ = "seats"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    screen_id: Mapped[int] = mapped_column(ForeignKey("screens.id", ondelete="CASCADE"), index=True)
+    row_label: Mapped[str] = mapped_column(String(5))
+    seat_number: Mapped[int] = mapped_column(Integer)
+    category: Mapped[str] = mapped_column(String(20))
+    price: Mapped[float] = mapped_column(Numeric(10, 2))
+    screen = relationship("Screen", back_populates="seats")
+    __table_args__ = (UniqueConstraint("screen_id", "row_label", "seat_number", name="uq_screen_seat"),)
+
+class Show(Base):
+    __tablename__ = "shows"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    movie_id: Mapped[int] = mapped_column(ForeignKey("movies.id", ondelete="CASCADE"), index=True)
+    screen_id: Mapped[int] = mapped_column(ForeignKey("screens.id", ondelete="CASCADE"), index=True)
+    show_date: Mapped[date] = mapped_column(Date, index=True)
+    show_time: Mapped[time] = mapped_column(Time)
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+    movie = relationship("Movie", back_populates="shows")
+    screen = relationship("Screen", back_populates="shows")
+    show_seats = relationship("ShowSeat", back_populates="show", cascade="all, delete-orphan")
+    __table_args__ = (UniqueConstraint("screen_id", "show_date", "show_time", name="uq_screen_showtime"),)
+
+class Booking(Base):
+    __tablename__ = "bookings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    booking_reference: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    show_id: Mapped[int] = mapped_column(ForeignKey("shows.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default=BookingStatus.HELD.value)
+    total_amount: Mapped[float] = mapped_column(Numeric(10, 2))
+    payment_method: Mapped[str] = mapped_column(String(60), default="MOCK")
+    payment_status: Mapped[str] = mapped_column(String(20), default=PaymentStatus.PENDING.value)
+    hold_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    user = relationship("User", back_populates="bookings")
+    show = relationship("Show")
+    booking_seats = relationship("BookingSeat", back_populates="booking", cascade="all, delete-orphan")
+
+class ShowSeat(Base):
+    __tablename__ = "show_seats"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    show_id: Mapped[int] = mapped_column(ForeignKey("shows.id", ondelete="CASCADE"), index=True)
+    seat_id: Mapped[int] = mapped_column(ForeignKey("seats.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default=ShowSeatStatus.AVAILABLE.value, index=True)
+    hold_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id", ondelete="SET NULL"), nullable=True, index=True)
+    show = relationship("Show", back_populates="show_seats")
+    seat = relationship("Seat")
+    __table_args__ = (UniqueConstraint("show_id", "seat_id", name="uq_show_seat"),)
+
+class BookingSeat(Base):
+    __tablename__ = "booking_seats"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id", ondelete="CASCADE"), index=True)
+    show_id: Mapped[int] = mapped_column(ForeignKey("shows.id", ondelete="CASCADE"), index=True)
+    seat_id: Mapped[int] = mapped_column(ForeignKey("seats.id", ondelete="CASCADE"), index=True)
+    price: Mapped[float] = mapped_column(Numeric(10, 2))
+    booking = relationship("Booking", back_populates="booking_seats")
+    seat = relationship("Seat")
+    __table_args__ = (UniqueConstraint("booking_id", "seat_id", name="uq_booking_seat"),)
+
+class Review(Base):
+    __tablename__ = "reviews"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    rating: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text)
+    spoiler: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    user = relationship("User")
+
+class ReviewLike(Base):
+    __tablename__ = "review_likes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_id: Mapped[int] = mapped_column(ForeignKey("reviews.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("review_id", "user_id", name="uq_review_user_like"),)
+
+class NewsletterSubscriber(Base):
+    __tablename__ = "newsletter_subscribers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    email: Mapped[str] = mapped_column(String(255), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class ContactMessage(Base):
+    __tablename__ = "contact_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    email: Mapped[str] = mapped_column(String(255))
+    subject: Mapped[str] = mapped_column(String(120))
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

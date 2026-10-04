@@ -1,0 +1,23 @@
+services:
+  web:
+    build: .
+    image: dhurandhar-cinema:latest
+    ports:
+      - "5000:5000"
+    environment:
+      # Absolute-path SQLite inside the container; persisted via the named volume.
+      DATABASE_URL: sqlite:////data/dhurandhar.db
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      PAYMENT_MODE: ${PAYMENT_MODE:-mock}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5000,http://127.0.0.1:5000}
+    volumes:
+      - db-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:5000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  db-data:

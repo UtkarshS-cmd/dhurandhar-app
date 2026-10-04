@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DHURANDHAR — An Aditya Dhar Film</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;600;900&family=Bebas+Neue&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/booking.css">
+<link rel="stylesheet" href="css/responsive.css">
+<meta name="description" content="DHURANDHAR — An Aditya Dhar film. Jio Studios × B62 Studios. In cinemas 5th December 2025. Book tickets, explore the cast, gallery, music and reviews.">
+<meta name="theme-color" content="#0a0a08">
+<meta property="og:title" content="DHURANDHAR — An Aditya Dhar Film">
+<meta property="og:description" content="Jio Studios × B62 Studios. In cinemas 5th December 2025. Book tickets, explore the gallery, music and reviews.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/video/hero-poster.jpg">
+<link rel="icon" type="image/jpeg" href="assets/images/image-01.jpg">
+<link rel="apple-touch-icon" href="assets/images/image-01.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="image" href="assets/video/hero-poster.jpg" fetchpriority="high">
+<link rel="preload" as="audio" href="assets/audio/title-track.mp3" type="audio/mpeg">
+</head>
+<body>
+<div class="cursor" id="cursor"></div>
+<div class="cursor-trail" id="trail"></div>
+<div class="mobile-menu" id="mobile-menu">
+  <button type="button" class="mobile-close" aria-label="Close menu" id="menu-close">&#x2715;</button>
+  <a href="#about" data-action="close-menu">About</a>
+  <a href="#gallery" data-action="close-menu">Gallery</a>
+  <a href="#cast" data-action="close-menu">Cast</a>
+  <a href="#music" data-action="close-menu">Music</a>
+</div>
+<nav id="navbar">
+  <a href="#hero" class="nav-logo">Dhurandhar</a>
+  <ul class="nav-links">
+  <li><a href="#reviews">Reviews</a></li>
+  <li><a href="#contact">Contact</a></li>
+    <li><a href="#about">About</a></li>
+    <li><a href="#gallery">Gallery</a></li>
+    <li><a href="#cast">Cast</a></li>
+    <li><a href="#music">Music</a></li>
+  </ul>
+  <button type="button" class="hamburger" aria-label="Open menu" aria-expanded="false" id="hamburger"><span></span><span></span><span></span></button>
+  <div style="display:flex;gap:10px;align-items:center">
+  <button id="nav-auth-btn" class="book-btn" style="background:rgba(201,168,76,0.12);color:var(--gold);border:1px solid rgba(201,168,76,0.3);" data-action="open-auth">Sign In</button>
+  <button class="book-btn" data-action="open-booking">Book Tickets</button>
+</div>
+</nav>
+<section id="hero">
+  <video id="bg-video" autoplay muted loop playsinline preload="auto" poster="assets/video/hero-poster.jpg" aria-label="Dhurandhar cinematic trailer"><source src="assets/video/hero.mp4" type="video/mp4"><img src="assets/video/hero-poster.jpg" alt="Dhurandhar — hero poster"></video>
+  <div class="hero-overlay"></div>
+  <div class="hero-content">
+    <p class="studio-line">Jio Studios presents &nbsp;&middot;&nbsp; A B62 Studios Production</p>
+    <h1 class="hero-title">DHURANDHAR</h1>
+    <p class="tagline">AN ADITYA DHAR FILM</p>
+    <p class="director-line">Written &nbsp;&middot;&nbsp; Directed &nbsp;&middot;&nbsp; Produced by Aditya Dhar</p>
+    <div class="date-badge">In Cinemas &nbsp;&middot;&nbsp; 5th December 2025</div>
+  </div>
+  <div class="scroll-hint"><span>Scroll</span><div class="scroll-line"></div></div>
+
+  <button id="video-mute-btn" title="Toggle Sound" style="
+    position:absolute;bottom:36px;right:36px;
+    z-index:50;pointer-events:all;
+    width:48px;height:48px;border-radius:50%;
+    background:rgba(0,0,0,0.65);
+    border:1px solid rgba(201,168,76,0.4);
+    color:var(--gold-light);font-size:20px;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:all 0.3s;backdrop-filter:blur(6px);
+    user-select:none;-webkit-user-select:none;
+  ">🔇</button>
+<noscript><div style="max-width:720px;margin:48px auto;padding:24px;text-align:center;border:1px solid rgba(201,168,76,0.3);color:#d4c8a8;font-family:sans-serif;">Enable JavaScript for ticket booking, music, reviews and contact. In cinemas 5th December 2025.</div></noscript>
+</section>
+<section id="about">
+  <p class="section-label reveal">The Film</p>
+  <h2 class="section-title reveal">THE WORLD OF<br>DHURANDHAR</h2>
+  <div class="about-tabs reveal">
+    <button class="tab-btn active" data-tab="story">The Story</button>
+    <button class="tab-btn" data-tab="locations">Shooting Locations</button>
+    <button class="tab-btn" data-tab="production">Production</button>
+    <button class="tab-btn" data-tab="crew">Crew</button>
+  </div>
+  <div class="tab-panel active" id="tab-story">
+    <div class="about-grid">
+      <div class="about-text">
+        <p>It begins with blood on the map. <strong>1999. IC-814 hijacking. 2001. Attack on the Indian Parliament.</strong> India bleeds across a decade of terror — but from the shadows, a plan takes shape so audacious that even its architects dare not speak its name aloud.</p>
+        <p><strong>Ajay Sanyal</strong> (R. Madhavan), Chief of India's Intelligence Bureau, is haunted by the nation's failures. In 2002, with approval from External Affairs Minister Devarat Kapoor (Akash Khurana), he launches <strong>Operation Dhurandhar</strong> — a decade-long covert infiltration of <strong>Karachi's criminal underworld</strong> and ISI nexus. His weapon: a raw, volatile 20-year-old Punjabi prisoner, jailed for a revenge crime, who has nothing to lose.</p>
+        <p>Assuming the identity of <strong>Hamza Ali Mazari</strong> from Balochistan, India's most dangerous ghost slips into the politically explosive neighbourhood of <strong>Lyari, Karachi</strong> — controlled by rival gangs, including the fearsome <strong>Rehman Balochi aka Rehman Dakait</strong> (Akshaye Khanna). Hamza gets a job at a juice shop owned by <strong>Aalam</strong> (Gaurav Gera), slowly earning trust, rising through ranks, and dismantling a terror network from within over a decade.</p>
+        <p>The story draws loose inspiration from the <strong>2008 Mumbai attacks</strong>, the <strong>1999 IC-814 hijacking</strong>, and Pakistan's real-life <strong>Operation Lyari</strong> — the government crackdown on Karachi's criminal syndicates. A mysterious traveller slips into the heart of Karachi's underbelly and rises with lethal precision, only to tear the notorious ISI-Underworld nexus apart from within.</p>
+        <p>Told in chapters across a <strong>214-minute runtime</strong> — one of the longest Indian films in decades — Dhurandhar is the first instalment of a two-part saga. The sequel, <em>Dhurandhar: The Revenge</em>, releases <strong>19 March 2026</strong>.</p>
+        <div class="fact-grid">
+          <div class="fact-block"><span class="fact-num">8.3</span><div class="fact-label">IMDb Rating</div></div>
+          <div class="fact-block"><span class="fact-num">214</span><div class="fact-label">Min Runtime</div></div>
+          <div class="fact-block"><span class="fact-num">2</span><div class="fact-label">Part Duology</div></div>
+          <div class="fact-block"><span class="fact-num">₹1,349Cr</span><div class="fact-label">Worldwide BO</div></div>
+        </div>
+      </div>
+      <div class="about-img-wrap"><img src="assets/images/image-16.jpg" alt="Dhurandhar Story" loading="lazy" decoding="async"></div>
+    </div>
+  </div>
+  <div class="tab-panel" id="tab-locations">
+    <div class="about-text" style="margin-bottom:32px;">
+      <p>Principal photography spanned <strong>July 2024 to October 2025</strong> — over 15 months across two continents and six Indian states and union territories. Director Aditya Dhar shot approximately <strong>seven hours of footage</strong>, crafting a saga so vast it became a two-part duology. Thailand's streets were dressed as Karachi; Indian villages became Pakistani settlements; industrial bridges became war zones.</p>
+    </div>
+    <div class="locations-grid">
+      <div class="loc-card">
+        <div class="loc-name">🇹🇭 Bangkok, Thailand</div>
+        <div class="loc-desc">The first and longest schedule — <strong>July 2024</strong>. Bangkok's dense urban landscape was meticulously transformed to recreate Karachi's Lyari district. Thai authorities were intrigued as Pakistani flags went up on set. The city's layered, gritty streets provided the most authentic visual substitute for Karachi available to the production.</div>
+      </div>
+      <div class="loc-card">
+        <div class="loc-name">🛕 Amritsar & Golden Temple, Punjab</div>
+        <div class="loc-desc"><strong>November 2024</strong>. Shooting near India's most sacred Sikh shrine required extraordinary logistical sensitivity. Village settings near the Golden Temple were adapted with minimal dressing to portray Pakistani rural Punjab — causing a local stir when the tricolour came down and other flags were raised for a sequence.</div>
+      </div>
+      <div class="loc-card">
+        <div class="loc-name">🎬 Filmistan Studios, Mumbai</div>
+        <div class="loc-desc"><strong>February–April 2025</strong>. The iconic Filmistan Studios became the production's nerve centre for intricate interior sequences, large-scale set constructions, and performance-driven scenes requiring precision cinematography unavailable in live-location shoots.</div>
+      </div>
+      <div class="loc-card">
+        <div class="loc-name">🌊 Madh Island & Mankoli Bridge, Mumbai</div>
+        <div class="loc-desc">Madh Island's coastal isolation served outdoor sequences through <strong>April 2025</strong>. In <strong>May 2025</strong>, the Dombivli–Mankoli Bridge became the arena for several of the film's most explosive action set-pieces — physically demanding stunt work filmed with meticulous safety coordination over multiple days.</div>
+      </div>
+      <div class="loc-card">
+        <div class="loc-name">🏭 Golden Tobacco Factory, Vile Parle</div>
+        <div class="loc-desc"><strong>July 2025</strong>. Ranveer Singh filmed a high-energy dance sequence at this iconic Mumbai industrial space — introducing a rare burst of colour and kinetic energy into Dhurandhar's otherwise smoke-and-shadow visual palette. The factory's brutalist industrial architecture creates a striking contrast to the film's espionage realism.</div>
+      </div>
+      <div class="loc-card">
+        <div class="loc-name">🏔️ Leh, Ladakh</div>
+        <div class="loc-desc">From <strong>August 2025</strong>, high-altitude sequences around Patthar Sahib in Leh captured extremes of isolation and endurance. The crew battled altitude sickness and a mid-shoot food poisoning incident that briefly halted production entirely. Ranveer Singh completed his Ladakh portions by October 2025 — the final schedule of the entire shoot.</div>
+      </div>
+      <div class="loc-card">
+        <div class="loc-name">🏔️ Himachal Pradesh & Chandigarh</div>
+        <div class="loc-desc">Emotionally charged sequences were filmed across <strong>Himachal Pradesh's valleys</strong> — the landscape doing narrative work through atmosphere alone. <strong>Chandigarh</strong> provided urban texture for scenes centred on the Punjab-origin characters whose lives straddle two nations and two identities throughout the decade-long story.</div>
+      </div>
+    </div>
+  </div>
+  <div class="tab-panel" id="tab-production">
+    <div class="about-grid">
+      <div class="about-text">
+        <p>Dhurandhar represents the most ambitious Bollywood spy production in over a decade. Director Aditya Dhar, fresh from <strong>Uri: The Surgical Strike (2019)</strong> and <strong>Article 370 (2024)</strong>, spent years developing the script — a densely researched espionage thriller rooted in real geopolitical events.</p>
+        <p>Principal photography ran from <strong>July 2024 to October 2025</strong> — over 15 months across Thailand, Punjab, Maharashtra, Ladakh, Himachal Pradesh and Chandigarh. The production shot approximately <strong>seven hours of raw footage</strong>. The film was originally conceived as a single feature, but in October 2025, during post-production, Dhar realised the narrative's moral complexity and character depth could not be condensed without feeling rushed. The story was officially split into a <strong>two-part saga</strong> — both parts shot back-to-back.</p>
+        <p>The trailer was scheduled for 12 November 2025 but was postponed following the <strong>2025 Delhi car explosion</strong>, releasing instead on 18 November at the <strong>Nita Mukesh Ambani Cultural Centre, Mumbai</strong>. The audio launch took place on <strong>1 December 2025</strong>. At the 56th IFFI in Goa, Ranveer Singh received backlash for mimicking a sacred ritual, for which he later issued a formal public apology.</p>
+        <p>The film received <strong>CBFC's A certificate</strong> with a clean chit — officially declared a work of fiction not linked to any real officer's life. Soundtrack rights were acquired by <strong>T-Series for ₹45 crore</strong>, one of the highest music deals in Bollywood history. Dhurandhar is <strong>banned in Gulf countries</strong>, though it dominated overseas markets regardless — posting ₹42 crore internationally in its first 4 days alone.</p>
+        <p>The film crossed <strong>₹1,000 crore worldwide on 26 December 2025</strong>, becoming the <strong>highest-grossing Indian film of 2025</strong>, the <strong>second highest-grossing Hindi film of all time</strong>, and the <strong>highest-grossing A-certified Indian film ever</strong>.</p>
+        <div class="fact-grid">
+          <div class="fact-block"><span class="fact-num">15+</span><div class="fact-label">Months Filming</div></div>
+          <div class="fact-block"><span class="fact-num">7hrs</span><div class="fact-label">Raw Footage Shot</div></div>
+          <div class="fact-block"><span class="fact-num">₹45Cr</span><div class="fact-label">T-Series Music Deal</div></div>
+          <div class="fact-block"><span class="fact-num">#1</span><div class="fact-label">India Box Office 2025</div></div>
+        </div>
+      </div>
+      <div class="about-img-wrap"><img src="assets/images/image-10.jpg" alt="Production" loading="lazy" decoding="async"></div>
+    </div>
+  </div>
+  <div class="tab-panel" id="tab-crew">
+    <div class="about-text" style="margin-bottom:28px;">
+      <p>Behind <strong>Dhurandhar</strong> stands a crew of India's finest filmmakers united by Aditya Dhar's singular vision of a spy epic that refuses to compromise on scale, authenticity, or emotional truth. IMDb rating: <strong>8.3/10</strong>. Rotten Tomatoes: critics praise performances, direction, action, and score.</p>
+    </div>
+    <div class="crew-list">
+      <div class="crew-item"><span class="crew-role">Written, Directed &amp; Produced by</span><span class="crew-name">Aditya Dhar <span style="color:rgba(201,168,76,0.5);font-size:12px;">— Uri: The Surgical Strike · Article 370</span></span></div>
+      <div class="crew-item"><span class="crew-role">Produced by</span><span class="crew-name">Jyoti Deshpande <span style="color:rgba(201,168,76,0.5);font-size:12px;">— Jio Studios</span></span></div>
+      <div class="crew-item"><span class="crew-role">Produced by</span><span class="crew-name">Lokesh Dhar <span style="color:rgba(201,168,76,0.5);font-size:12px;">— B62 Studios</span></span></div>
+      <div class="crew-item"><span class="crew-role">Music Composed by</span><span class="crew-name">Shashwat Sachdev <span style="color:rgba(201,168,76,0.5);font-size:12px;">— T-Series deal: ₹45 Crore</span></span></div>
+      <div class="crew-item"><span class="crew-role">Cinematography by</span><span class="crew-name">Vikash Nowlakha</span></div>
+      <div class="crew-item"><span class="crew-role">Edited by</span><span class="crew-name">Shivkumar V. Panicker</span></div>
+      <div class="crew-item"><span class="crew-role">2nd Unit Director</span><span class="crew-name">Ojas Gautam <span style="color:rgba(201,168,76,0.5);font-size:12px;">— Also edited teaser & trailer; director's brother-in-law</span></span></div>
+      <div class="crew-item"><span class="crew-role">Production Consultant</span><span class="crew-name">Aditya Raj Kaul <span style="color:rgba(201,168,76,0.5);font-size:12px;">— Senior Executive Editor, TV9 Network</span></span></div>
+      <div class="crew-item"><span class="crew-role">Music Rights</span><span class="crew-name">T-Series <span style="color:rgba(201,168,76,0.5);font-size:12px;">— One of Bollywood's highest ever music deals</span></span></div>
+      <div class="crew-item"><span class="crew-role">CBFC Certificate</span><span class="crew-name">A Certificate <span style="color:rgba(201,168,76,0.5);font-size:12px;">— Clean chit; declared fictional, not linked to real officer</span></span></div>
+      <div class="crew-item"><span class="crew-role">Streaming Partner</span><span class="crew-name">Netflix India <span style="color:rgba(201,168,76,0.5);font-size:12px;">— Now streaming</span></span></div>
+      <div class="crew-item"><span class="crew-role">Box Office Records</span><span class="crew-name">#1 India 2025 · #2 All-Time Hindi · Highest A-Cert Film Ever</span></div>
+      <div class="crew-item"><span class="crew-role">Sequel</span><span class="crew-name">Dhurandhar: The Revenge <span style="color:rgba(201,168,76,0.5);font-size:12px;">— 19 March 2026</span></span></div>
+    </div>
+  </div>
+</section>
+<section id="gallery">
+  <p class="section-label reveal">Visual Chronicle</p>
+  <h2 class="section-title reveal">THE WORLD<br>IN FRAMES</h2>
+  <div class="gallery-grid">
+    <div class="g-item"><img src="assets/images/image-01.jpg" alt="Dhurandhar — Hero Frame" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>Hero Frame</span></div></div>
+    <div class="g-item"><img src="assets/images/image-02.jpg" alt="Dhurandhar — Smoke and Shadow" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>Smoke &amp; Shadow</span></div></div>
+    <div class="g-item"><img src="assets/images/image-03.jpg" alt="Dhurandhar — Deep Cover" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>Deep Cover</span></div></div>
+    <div class="g-item"><img src="assets/images/image-04.jpg" alt="Dhurandhar — Karachi Nights" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>Karachi Nights</span></div></div>
+    <div class="g-item"><img src="assets/images/image-05.jpg" alt="Dhurandhar — The Informant" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>The Informant</span></div></div>
+    <div class="g-item"><img src="assets/images/image-06.jpg" alt="Dhurandhar — Line of Fire" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>Line of Fire</span></div></div>
+    <div class="g-item"><img src="assets/images/image-07.jpg" alt="Dhurandhar — Ghost Protocol" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>Ghost Protocol</span></div></div>
+    <div class="g-item"><img src="assets/images/image-08.jpg" alt="Dhurandhar — Blood and Dust" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>Blood &amp; Dust</span></div></div>
+    <div class="g-item"><img src="assets/images/image-09.jpg" alt="Dhurandhar — The Handler" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>The Handler</span></div></div>
+    <div class="g-item"><img src="assets/images/image-10.jpg" alt="The Fuse" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>The Fuse</span></div></div>
+    <div class="g-item"><img src="assets/images/image-11.jpg" alt="The Phantom" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>The Phantom</span></div></div>
+    <div class="g-item"><img src="assets/images/image-12.jpg" alt="The Strategist" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>The Strategist</span></div></div>
+    <div class="g-item"><img src="assets/images/image-13.jpg" alt="Dhurandhar — IB Command" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>IB Command</span></div></div>
+    <div class="g-item"><img src="assets/images/image-14.jpg" alt="Standoff" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>Standoff</span></div></div>
+    <div class="g-item"><img src="assets/images/image-15.jpg" alt="War Torn" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>War Torn</span></div></div>
+    <div class="g-item"><img src="assets/images/image-16.jpg" alt="The Ensemble" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>The Ensemble</span></div></div>
+    <div class="g-item"><img src="assets/images/image-17.jpg" alt="Bloodied" loading="lazy" decoding="async" fetchpriority="low" width="1200" height="800" onerror="this.closest('.g-item').style.display='none'"><div class="g-item-label"><span>Bloodied</span></div></div>
+  </div>
+  <noscript><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;max-width:900px;margin:0 auto;padding:24px;"><img src="assets/images/image-01.jpg" alt="Dhurandhar — Hero Frame" style="width:100%;" loading="lazy"><img src="assets/images/image-02.jpg" alt="Dhurandhar — Smoke and Shadow" style="width:100%;" loading="lazy"><img src="assets/images/image-03.jpg" alt="Dhurandhar — Deep Cover" style="width:100%;" loading="lazy"><img src="assets/images/image-04.jpg" alt="Dhurandhar — Karachi Nights" style="width:100%;" loading="lazy"><img src="assets/images/image-05.jpg" alt="Dhurandhar — The Informant" style="width:100%;" loading="lazy"><img src="assets/images/image-06.jpg" alt="Dhurandhar — Line of Fire" style="width:100%;" loading="lazy"><img src="assets/images/image-07.jpg" alt="Dhurandhar — Ghost Protocol" style="width:100%;" loading="lazy"><img src="assets/images/image-08.jpg" alt="Dhurandhar — Blood and Dust" style="width:100%;" loading="lazy"><img src="assets/images/image-09.jpg" alt="Dhurandhar — The Handler" style="width:100%;" loading="lazy"></div></noscript>
+</section>
+<section id="cast">
+  <p class="section-label reveal">Faces of War</p>
+  <h2 class="section-title reveal">CAST &amp;<br>CHARACTERS</h2>
+  <div class="cast-grid reveal">
+
+    <div class="cast-card">
+      <div class="cast-badge">Lead</div>
+      <img src="assets/images/image-10.jpg" alt="Ranveer Singh" loading="lazy" decoding="async">
+      <div class="cast-info">
+        <div class="cast-actor">Ranveer Singh</div>
+        <div class="cast-character">Hamza Ali Mazari</div>
+        <div class="cast-desc">A raw, volatile 20-year-old prisoner transformed into India&rsquo;s most dangerous deep-cover operative. Operating inside Karachi&rsquo;s Lyari district under a Baloch identity for over a decade &mdash; where one wrong word means death.</div>
+      </div>
+    </div>
+
+    <div class="cast-card">
+      <div class="cast-badge">Antagonist</div>
+      <img src="assets/images/image-11.jpg" alt="Akshaye Khanna" loading="lazy" decoding="async">
+      <div class="cast-info">
+        <div class="cast-actor">Akshaye Khanna</div>
+        <div class="cast-character">Rehman Balochi</div>
+        <div class="cast-desc">The fearsome warlord of Lyari &mdash; a crime lord who controls Karachi&rsquo;s most volatile territory through brilliance, brutality and an iron code of loyalty that makes him impossible to outmanoeuvre.</div>
+      </div>
+    </div>
+
+    <div class="cast-card">
+      <div class="cast-badge">Villain</div>
+      <img src="assets/images/image-12.jpg" alt="Sanjay Dutt" loading="lazy" decoding="async">
+      <div class="cast-info">
+        <div class="cast-actor">Sanjay Dutt</div>
+        <div class="cast-character">The Underworld Don</div>
+        <div class="cast-desc">A formidable force within the ISI-underworld nexus. Veteran of Mumbai&rsquo;s criminal underground with deep ties across borders &mdash; bringing menace and moral ambiguity to a world of shifting allegiances.</div>
+      </div>
+    </div>
+
+    <div class="cast-card">
+      <div class="cast-badge">IB Chief</div>
+      <img src="assets/images/image-13.jpg" alt="R. Madhavan" loading="lazy" decoding="async">
+      <div class="cast-info">
+        <div class="cast-actor">R. Madhavan</div>
+        <div class="cast-character">Ajay Sanyal — IB Chief</div>
+        <div class="cast-desc">The mastermind of Operation Dhurandhar. Haunted by the 1999 IC-814 hijacking and the Parliament attack, Sanyal conceives the most audacious covert operation in Indian intelligence history.</div>
+      </div>
+    </div>
+
+    <div class="cast-card">
+      <div class="cast-badge">Field Op</div>
+      <img src="assets/images/image-14.jpg" alt="Arjun Rampal" loading="lazy" decoding="async">
+      <div class="cast-info">
+        <div class="cast-actor">Arjun Rampal</div>
+        <div class="cast-character">Field Commander</div>
+        <div class="cast-desc">A senior RAW field commander providing tactical support to the embedded operation. Cool under pressure, he is the steel backbone connecting field intelligence to decisions made at the highest levels.</div>
+      </div>
+    </div>
+
+    <div class="cast-card">
+      <div class="cast-badge">Support</div>
+      <img src="assets/images/image-15.jpg" alt="Ranveer Singh — Battle Worn" loading="lazy" decoding="async">
+      <div class="cast-info">
+        <div class="cast-actor">Ranveer Singh</div>
+        <div class="cast-character">Hamza — Battle Worn</div>
+        <div class="cast-desc">Bloodied, broken, but unbroken in spirit &mdash; Hamza&rsquo;s journey through the underworld leaves physical and psychological scars that reveal the true cost of a life lived as someone else.</div>
+      </div>
+    </div>
+
+    <div class="cast-card">
+      <div class="cast-badge">Ensemble</div>
+      <img src="assets/images/image-16.jpg" alt="Full Ensemble Cast" loading="lazy" decoding="async">
+      <div class="cast-info">
+        <div class="cast-actor">The Full Ensemble</div>
+        <div class="cast-character">World of Dhurandhar</div>
+        <div class="cast-desc">Sara Arjun, Manav Gohil, Rakesh Bedi, Danish Pandor, Gaurav Gera, Saumya Tandon &mdash; a richly textured world that makes the criminal ecosystem of Dhurandhar truly breathe.</div>
+      </div>
+    </div>
+
+    <div class="cast-card">
+      <div class="cast-badge">Action</div>
+      <img src="assets/images/image-17.jpg" alt="Ranveer Singh — In Action" loading="lazy" decoding="async">
+      <div class="cast-info">
+        <div class="cast-actor">Ranveer Singh</div>
+        <div class="cast-character">Hamza — In Action</div>
+        <div class="cast-desc">A ghost moving at lethal speed through Karachi&rsquo;s streets &mdash; weapon in hand, identity buried deep, mission above all. The precision and physicality Ranveer brings to every frame is extraordinary.</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section id="music">
+  <p class="section-label reveal">Soundscape</p>
+  <h2 class="section-title reveal">THE MUSIC OF<br>DHURANDHAR</h2>
+  <div class="beatbox reveal">
+    <div class="bb-scanline"></div>
+    <div class="bb-header">
+      <div class="bb-brand">DHURANDHAR &nbsp;&middot;&nbsp; OST</div>
+      <div class="bb-leds"><div class="led g"></div><div class="led r"></div><div class="led y"></div><div class="led" id="led-w"></div></div>
+    </div>
+    <div class="bb-viz"><div class="viz-inner" id="visualizer"></div></div>
+    <div class="bb-nowplaying">
+      <div class="np-label">Now Playing</div>
+      <div class="np-title" id="np-title">Title Track &mdash; Dhurandhar</div>
+      <div class="np-artist" id="np-artist">Shashwat Sachdev</div>
+    </div>
+    <div class="bb-progress">
+      <div class="time-row"><span id="cur-time">0:00</span><span id="tot-time">0:00</span></div>
+      <div class="prog-track" id="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
+    </div>
+    <div class="bb-controls">
+      <button class="ctrl" id="btn-shuffle" title="Shuffle">
+        <svg viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+      </button>
+      <button class="ctrl" id="btn-prev" title="Previous">
+        <svg viewBox="0 0 24 24"><polygon points="19,20 9,12 19,4"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+      </button>
+      <button class="play-btn" id="btn-play">&#9654;</button>
+      <button class="ctrl" id="btn-next" title="Next">
+        <svg viewBox="0 0 24 24"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+      </button>
+      <button class="ctrl" id="btn-repeat" title="Repeat">
+        <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      </button>
+    </div>
+    <div class="bb-vol">
+      <span class="vol-icon">&#128264;</span>
+      <input type="range" class="vol-s" id="vol-range" min="0" max="1" step="0.02" value="0.85">
+      <span class="vol-icon">&#128266;</span>
+    </div>
+    <div class="bb-tracklist" id="tracklist"></div>
+  </div>
+</section>
+
+<!-- ═══════ REVIEWS SECTION ═══════ -->
+<section id="reviews" style="padding:100px 0;background:linear-gradient(180deg,var(--dark),#0a0805);">
+  <p class="section-label reveal">What Audiences Say</p>
+  <h2 class="section-title reveal">REVIEWS &amp;<br>RATINGS</h2>
+
+  <!-- Write a review (logged in only) -->
+  <div id="review-write-wrap" style="max-width:680px;margin:0 auto 48px;padding:0 24px;display:none;">
+    <div style="background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);padding:28px;">
+      <div style="font-size:11px;letter-spacing:0.35em;color:rgba(201,168,76,0.6);text-transform:uppercase;margin-bottom:16px;">Write Your Review</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px;">
+        <div>
+          <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Rating (1–10)</label>
+          <input id="r-rating" type="number" min="1" max="10" placeholder="8" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:10px 12px;font-size:14px;outline:none;">
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Review Title</label>
+          <input id="r-title" type="text" placeholder="A masterpiece of spy cinema" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:10px 12px;font-size:14px;outline:none;">
+        </div>
+      </div>
+      <textarea id="r-body" rows="4" placeholder="Share your honest thoughts about the film…" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:10px 12px;font-size:13px;outline:none;resize:vertical;margin-bottom:12px;font-family:inherit;"></textarea>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(212,200,168,0.5);cursor:pointer;">
+          <input type="checkbox" id="r-spoiler"> Contains spoilers
+        </label>
+        <button data-action="submit-review" style="background:linear-gradient(135deg,#a07830,#c9a84c);color:#080806;border:none;padding:10px 24px;font-family:inherit;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;font-weight:700;">Submit Review</button>
+      </div>
+      <div id="r-err" style="font-size:12px;color:#e07070;margin-top:8px;display:none;"></div>
+    </div>
+  </div>
+
+  <div id="review-login-cta" style="max-width:680px;margin:0 auto 40px;padding:0 24px;text-align:center;">
+    <p style="color:rgba(212,200,168,0.45);font-size:13px;letter-spacing:0.1em;"><span style="cursor:pointer;color:rgba(201,168,76,0.7);text-decoration:underline;" data-action="open-auth">Sign in</span> to write a review for this film</p>
+  </div>
+
+  <!-- Reviews list -->
+  <div id="reviews-list" style="max-width:820px;margin:0 auto;padding:0 24px;"></div>
+  <div style="text-align:center;margin-top:24px;"><button id="load-more-reviews" data-action="load-more-reviews" style="display:none;background:none;border:1px solid rgba(201,168,76,0.25);color:rgba(201,168,76,0.6);padding:10px 28px;cursor:pointer;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;font-family:inherit;transition:all 0.3s;">Load More Reviews</button></div>
+</section>
+
+<!-- ═══════ CONTACT + NEWSLETTER ═══════ -->
+<section id="contact" style="padding:100px 0;background:#080806;">
+  <div style="max-width:900px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:1fr 1fr;gap:48px;">
+
+    <!-- Contact Form -->
+    <div>
+      <p class="section-label" style="text-align:left;">Get In Touch</p>
+      <h2 style="font-family:'Cinzel Decorative',serif;font-size:28px;color:#e8cc7e;letter-spacing:0.05em;margin-bottom:28px;line-height:1.2;">CONTACT<br>US</h2>
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Your Name</label>
+        <input id="c-name" type="text" placeholder="Full name" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;">
+      </div>
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Email Address</label>
+        <input id="c-email" type="email" placeholder="your@email.com" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;">
+      </div>
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Subject</label>
+        <select id="c-subject" style="width:100%;background:#0f0c07;border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;-webkit-appearance:none;">
+          <option>General Enquiry</option><option>Booking Support</option><option>Technical Issue</option><option>Press & Media</option><option>Feedback</option>
+        </select>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Message</label>
+        <textarea id="c-message" rows="4" placeholder="Your message…" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;resize:vertical;font-family:inherit;"></textarea>
+      </div>
+      <button data-action="submit-contact" style="background:linear-gradient(135deg,#a07830,#c9a84c);color:#080806;border:none;padding:12px 28px;font-size:12px;letter-spacing:0.25em;text-transform:uppercase;cursor:pointer;font-weight:700;font-family:inherit;width:100%;">Send Message</button>
+      <div id="c-msg" style="font-size:12px;margin-top:10px;text-align:center;min-height:16px;"></div>
+    </div>
+
+    <!-- Newsletter -->
+    <div>
+      <p class="section-label" style="text-align:left;">Stay Updated</p>
+      <h2 style="font-family:'Cinzel Decorative',serif;font-size:28px;color:#e8cc7e;letter-spacing:0.05em;margin-bottom:14px;line-height:1.2;">NEWSLETTER</h2>
+      <p style="color:rgba(212,200,168,0.5);font-size:13px;line-height:1.7;margin-bottom:28px;letter-spacing:0.03em;">Get exclusive updates on Dhurandhar Part II, behind-the-scenes content, exclusive stills, and early booking alerts — delivered straight to your inbox.</p>
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Your Name</label>
+        <input id="nl-name" type="text" placeholder="First name" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;">
+      </div>
+      <div style="margin-bottom:20px;">
+        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Email Address</label>
+        <input id="nl-email" type="email" placeholder="your@email.com" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;">
+      </div>
+      <button data-action="submit-newsletter" style="background:rgba(201,168,76,0.1);color:#c9a84c;border:1px solid rgba(201,168,76,0.3);padding:12px 28px;font-size:12px;letter-spacing:0.25em;text-transform:uppercase;cursor:pointer;font-weight:700;font-family:inherit;width:100%;transition:all 0.3s;">Subscribe to Updates</button>
+      <div id="nl-msg" style="font-size:12px;margin-top:10px;text-align:center;min-height:16px;"></div>
+
+      <div style="margin-top:40px;padding-top:28px;border-top:1px solid rgba(201,168,76,0.1);">
+        <div style="font-size:10px;letter-spacing:0.35em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:14px;">Quick Links</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <a href="https://www.netflix.com/in/title/81967429" target="_blank" style="color:rgba(212,200,168,0.55);font-size:13px;text-decoration:none;letter-spacing:0.05em;transition:color 0.2s;">🎬 Watch on Netflix</a>
+          <a href="https://www.imdb.com/title/tt33014583/" target="_blank" style="color:rgba(212,200,168,0.55);font-size:13px;text-decoration:none;letter-spacing:0.05em;transition:color 0.2s;">⭐ IMDb Page</a>
+          <a href="https://en.wikipedia.org/wiki/Dhurandhar" target="_blank" style="color:rgba(212,200,168,0.55);font-size:13px;text-decoration:none;letter-spacing:0.05em;transition:color 0.2s;">📖 Wikipedia</a>
+          <a href="https://www.jiostudios.com" target="_blank" style="color:rgba(212,200,168,0.55);font-size:13px;text-decoration:none;letter-spacing:0.05em;transition:color 0.2s;">🎥 Jio Studios</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span class="footer-logo">Dhurandhar</span>
+  <p class="footer-sub">An Aditya Dhar Film &nbsp;&middot;&nbsp; Jio Studios &nbsp;&middot;&nbsp; B62 Studios</p>
+  <div class="studios-row">
+    <a class="s-badge" href="https://www.jiostudios.com" target="_blank" rel="noopener">Jio Studios</a><a class="s-badge" href="https://www.instagram.com/b62studios" target="_blank" rel="noopener">B62 Studios</a><a class="s-badge" href="https://www.netflix.com/in/title/81967429" target="_blank" rel="noopener">Netflix</a><a class="s-badge" href="https://www.t-series.com" target="_blank" rel="noopener">T-Series</a>
+  </div>
+  <div class="footer-bottom">
+    <span>&#169; 2025 Jio Studios &middot; All Rights Reserved</span>
+    <span>Sequel: Dhurandhar: The Revenge &mdash; 19 March 2026</span>
+  </div>
+</footer>
+<audio id="audio-el" preload="auto"></audio>
+<noscript><div style="text-align:center;color:#d4c8a8;padding:24px;font-family:sans-serif;">Enable JavaScript to play the Dhurandhar soundtrack.</div></noscript>
+
+
+<!-- ===== BOOKING MODAL ===== -->
+<div class="modal-overlay" id="bookingModal" role="dialog" aria-modal="true" aria-labelledby="booking-title">
+  <div class="modal-box" id="modalBox">
+    <button type="button" class="modal-close" aria-label="Close booking dialog" data-action="close-booking" title="Close">✕</button>
+
+    <div class="modal-header">
+      <span class="modal-logo" id="booking-title">Dhurandhar</span>
+      <div class="modal-sub">Book Your Cinema Experience</div>
+    </div>
+
+    <!-- Step Tabs -->
+    <div class="modal-steps">
+      <div class="modal-step-tab active" id="stab1"><span class="step-num">1</span>Register</div>
+      <div class="modal-step-tab" id="stab2"><span class="step-num">2</span>Theater</div>
+      <div class="modal-step-tab" id="stab3"><span class="step-num">3</span>Seats</div>
+      <div class="modal-step-tab" id="stab4"><span class="step-num">4</span>Confirm</div>
+    </div>
+
+    <!-- STEP 1: REGISTER -->
+    <div class="modal-panel active" id="mpanel1">
+      <div class="form-row" id="fr-name">
+        <label>Full Name</label>
+        <input type="text" id="f-name" placeholder="Enter your full name" autocomplete="name">
+        <div class="err-msg">Please enter your full name (min 3 characters)</div>
+      </div>
+      <div class="form-row" id="fr-email">
+        <label>Email Address</label>
+        <input type="email" id="f-email" placeholder="your@email.com" autocomplete="email">
+        <div class="err-msg">Please enter a valid email address</div>
+      </div>
+      <div class="form-row" id="fr-phone">
+        <label>Contact Number</label>
+        <input type="tel" id="f-phone" placeholder="+91 XXXXX XXXXX" autocomplete="tel">
+        <div class="err-msg">Please enter a valid 10-digit mobile number</div>
+      </div>
+      <div class="form-row" id="fr-pwd">
+        <label>Password</label>
+        <div class="input-icon-wrap">
+          <input type="password" id="f-pwd" placeholder="Min 8 characters" autocomplete="new-password">
+          <button class="eye-btn" type="button" data-action="toggle-password" data-target="f-pwd">👁</button>
+        </div>
+        <div class="err-msg">Password must be at least 8 characters</div>
+        <div class="hint">Include letters, numbers, and a special character</div>
+      </div>
+      <div class="form-row" id="fr-cpwd">
+        <label>Confirm Password</label>
+        <div class="input-icon-wrap">
+          <input type="password" id="f-cpwd" placeholder="Re-enter password" autocomplete="new-password">
+          <button class="eye-btn" type="button" data-action="toggle-password" data-target="f-cpwd">👁</button>
+        </div>
+        <div class="err-msg">Passwords do not match</div>
+      </div>
+      <button class="modal-btn" data-action="booking-step1">Continue to Theater Selection →</button>
+    </div>
+
+    <!-- STEP 2: THEATER -->
+    <div class="modal-panel" id="mpanel2">
+      <div class="form-row" id="fr-city">
+        <label>Select City</label>
+        <select id="f-city" data-action="update-theaters" aria-label="Select city"><option value="">— Choose your city —</option></select>
+        <div class="err-msg">Please select a city</div>
+      </div>
+      <div class="form-row" id="fr-date">
+        <label>Select Date</label>
+        <select id="f-date" aria-label="Select date"><option value="">— Select date —</option></select>
+        <div class="err-msg">Please select a date</div>
+      </div>
+      <div class="form-row" id="fr-theater">
+        <label>Nearby Theaters</label>
+        <div class="theater-grid" id="theaterGrid">
+          <div style="padding:20px;text-align:center;color:rgba(201,168,76,0.3);font-size:13px;letter-spacing:0.2em;">Select city to see theaters</div>
+        </div>
+        <div class="err-msg" id="theater-err" style="display:none;">Please select a theater and show time</div>
+      </div>
+      <button class="modal-btn" data-action="booking-step2">Continue to Seat Selection →</button>
+      <button class="modal-btn-ghost" data-step="1">← Back</button>
+    </div>
+
+    <!-- STEP 3: SEATS -->
+    <div class="modal-panel" id="mpanel3">
+      <div class="form-row">
+        <label>Number of Tickets</label>
+        <select id="f-tickets" data-action="update-seats">
+          <option value="1">1 Ticket</option>
+          <option value="2" selected>2 Tickets</option>
+          <option value="3">3 Tickets</option>
+          <option value="4">4 Tickets</option>
+          <option value="5">5 Tickets</option>
+          <option value="6">6 Tickets</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>Category</label>
+        <select id="f-category" aria-label="Seat category">
+           <option value="Gold">Gold — ₹450</option>
+           <option value="Silver" selected>Silver — ₹350</option>
+           <option value="Bronze">Bronze — ₹200</option>
+         </select>
+      </div>
+
+      <div class="form-row">
+        <label>Select Your Seats <span style="color:rgba(201,168,76,0.35);font-size:9px;letter-spacing:0.2em;">(SCREEN THIS SIDE ↑)</span></label>
+        <div style="background:rgba(201,168,76,0.06);padding:6px;margin-bottom:12px;text-align:center;font-size:10px;letter-spacing:0.4em;color:rgba(201,168,76,0.4);">▬▬▬▬▬▬ SCREEN ▬▬▬▬▬▬</div>
+
+        <div class="seat-section">
+          <div class="seat-type-label">Gold <span>Row A–B · ₹450</span></div>
+          <div class="seats-row" id="gold-seats"></div>
+        </div>
+        <div class="seat-section">
+          <div class="seat-type-label">Silver <span>Row C–E · ₹350</span></div>
+          <div class="seats-row" id="silver-seats"></div>
+        </div>
+        <div class="seat-section">
+          <div class="seat-type-label">Bronze <span>Row F–H · ₹200</span></div>
+          <div class="seats-row" id="bronze-seats"></div>
+        </div>
+
+        <div class="seat-legend">
+          <div class="legend-item"><div class="legend-dot avail"></div>Available</div>
+          <div class="legend-item"><div class="legend-dot sel"></div>Selected</div>
+          <div class="legend-item"><div class="legend-dot tak"></div>Taken</div>
+        </div>
+        <div class="err-msg" id="seat-err" style="display:none;margin-top:10px;">Please select the required number of seats</div>
+      </div>
+
+      <button class="modal-btn" data-action="booking-step3">Review & Confirm →</button>
+      <button class="modal-btn-ghost" data-step="2">← Back</button>
+    </div>
+
+    <!-- STEP 4: CONFIRM -->
+    <div class="modal-panel" id="mpanel4">
+      <div class="summary-box" id="summaryBox"></div>
+      <div class="form-row" style="margin-top:20px;" id="fr-upi">
+        <label>Payment Method</label>
+        <select id="f-payment">
+          <option>UPI / Google Pay / PhonePe</option>
+          <option>Credit / Debit Card</option>
+          <option>Net Banking</option>
+          <option>Pay at Counter</option>
+        </select>
+      </div>
+      <div class="form-row" id="fr-upiid" style="display:none;">
+        <label>UPI ID</label>
+        <input type="text" id="f-upiid" placeholder="yourname@upi">
+      </div>
+      <div class="form-row">
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+          <input type="checkbox" id="f-agree" style="width:auto;margin-top:2px;">
+          <span style="font-size:12px;color:rgba(212,200,168,0.5);line-height:1.5;letter-spacing:0.02em;">I agree to the terms & conditions. Tickets once booked cannot be cancelled or exchanged.</span>
+        </label>
+        <div class="err-msg" id="agree-err" style="display:none;">You must agree to the terms to proceed</div>
+      </div>
+      <button class="modal-btn" data-action="confirm-booking">🎬 Confirm &amp; Pay Now</button>
+      <button class="modal-btn-ghost" data-step="3">← Back</button>
+    </div>
+
+    <!-- SUCCESS -->
+    <div class="modal-panel" id="mpanel5">
+      <div class="success-screen">
+        <div class="success-icon">🎬</div>
+        <div class="success-title">Booking Confirmed!</div>
+        <div class="success-sub">Your seats are reserved. A confirmation has been sent to your email. Arrive 15 minutes early. Enjoy the film!</div>
+        <div class="booking-ref" id="bookingRef">DHR-000000</div>
+        <div style="font-size:11px;color:rgba(201,168,76,0.35);letter-spacing:0.2em;margin-bottom:28px;">BOOKING REFERENCE</div>
+        <button class="modal-btn" data-action="close-booking" style="max-width:240px;margin:0 auto;display:block;">Done</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- AUTH MODAL -->
+<div id="auth-modal">
+  <div class="auth-box">
+    <button type="button" class="auth-close" aria-label="Close sign in dialog" data-action="close-auth">✕</button>
+    <div class="auth-tabs">
+      <div class="auth-tab active" data-auth-tab="login">Sign In</div>
+      <div class="auth-tab" data-auth-tab="register">Register</div>
+    </div>
+    <!-- LOGIN -->
+    <div class="auth-panel active" id="auth-login">
+      <div class="auth-field"><label>Email</label><input id="al-email" type="email" placeholder="your@email.com"></div>
+      <div class="auth-field"><label>Password</label><input id="al-pwd" type="password" placeholder="••••••••"></div>
+      <button class="auth-btn" data-action="auth-login">Sign In</button>
+      <div class="auth-err" id="al-err"></div>
+      <p style="text-align:center;margin-top:12px;font-size:12px;color:rgba(212,200,168,0.4);">No account? <span style="color:rgba(201,168,76,0.7);cursor:pointer;text-decoration:underline" data-auth-tab="register">Register here</span></p>
+    </div>
+    <!-- REGISTER -->
+    <div class="auth-panel" id="auth-register">
+      <div class="auth-field"><label>Full Name</label><input id="ar-name" type="text" placeholder="Your name"></div>
+      <div class="auth-field"><label>Email</label><input id="ar-email" type="email" placeholder="your@email.com"></div>
+      <div class="auth-field"><label>Phone</label><input id="ar-phone" type="tel" placeholder="10-digit mobile number"></div>
+      <div class="auth-field"><label>Password</label><input id="ar-pwd" type="password" placeholder="Min 8 characters"></div>
+      <button class="auth-btn" data-action="auth-register">Create Account</button>
+      <div class="auth-err" id="ar-err"></div>
+      <div class="auth-ok" id="ar-ok"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MY BOOKINGS MODAL -->
+<div id="my-bookings-modal">
+  <div class="bookings-panel">
+    <div class="bp-header">
+      <h3>MY BOOKINGS</h3>
+      <button data-action="close-my-bookings" style="background:none;border:none;color:rgba(201,168,76,0.4);font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <div id="my-bookings-list" style="padding-bottom:24px;"></div>
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

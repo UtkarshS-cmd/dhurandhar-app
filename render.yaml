@@ -1,0 +1,23 @@
+# Render blueprint — deploys the Docker image with a managed Postgres database.
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: dhurandhar-cinema
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dhurandhar-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PAYMENT_MODE
+        value: mock
+      - key: CORS_ORIGINS
+        sync: false
+
+databases:
+  - name: dhurandhar-db
+    plan: free
