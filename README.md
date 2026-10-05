@@ -40,7 +40,23 @@ PYTHONPATH=. uvicorn app.main:app --host 0.0.0.0 --port 5000
 
 Open `http://localhost:5000`.
 
-The local development database defaults to SQLite because PostgreSQL is not assumed to be installed. Set `DATABASE_URL` in `.env` to a PostgreSQL SQLAlchemy URL for deployment.
+The local development database defaults to SQLite because PostgreSQL is not assumed to be installed. Set `DATABASE_URL` in `.env` to a PostgreSQL SQLAlchemy URL for deployment. Real environment variables always take precedence over `backend/.env`; the `JWT_SECRET` in `.env.example` is a local-development placeholder only and must be replaced for any shared/production deployment.
+
+## Testing
+
+Run the automated baseline suite from the repository root (no manually running server required; tests use an isolated temporary SQLite database):
+
+```bash
+backend/.venv/Scripts/python -m pytest backend/tests/test_api.py -v   # Windows
+# ./backend/.venv/bin/python -m pytest backend/tests/test_api.py -v  # macOS/Linux
+```
+
+## Asset validation
+
+```bash
+backend/.venv/Scripts/python check_assets.py   # Windows
+# ./backend/.venv/bin/python check_assets.py  # macOS/Linux
+```
 
 ## Architecture
 

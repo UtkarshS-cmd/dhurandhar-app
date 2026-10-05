@@ -56,7 +56,7 @@ if not exist "%VENV%\Scripts\python.exe" (
 set "VPY=%VENV%\Scripts\python.exe"
 
 rem --- 3. Install / verify dependencies ----------------------
-"%VPY%" -c "import fastapi, uvicorn, sqlalchemy, alembic, jwt, pydantic, httpx" >nul 2>nul
+"%VPY%" -c "import fastapi, uvicorn, sqlalchemy, alembic, jwt, pydantic, httpx, pytest" >nul 2>nul
 if errorlevel 1 (
     echo [*] Installing dependencies - first run only, please wait...
     "%VPY%" -m pip install --upgrade pip --quiet --disable-pip-version-check
@@ -71,7 +71,7 @@ if errorlevel 1 (
 ) else (
     echo [ok] Dependencies already installed.
 )
-"%VPY%" -c "import fastapi, uvicorn, sqlalchemy, alembic, jwt, pydantic, httpx" >nul 2>nul
+"%VPY%" -c "import fastapi, uvicorn, sqlalchemy, alembic, jwt, pydantic, httpx, pytest" >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Dependency verification failed even after install.
     pause
@@ -153,7 +153,7 @@ for %%F in (
     )
 )
 if "!MISSING_ASSET!"=="0" (
-    echo [ok] All 36 frontend assets present ^(2 video, 8 audio, 17 images, 3 css, 6 js^).
+    echo [ok] All 37 frontend assets present ^(2 video, 8 audio, 17 images, 3 css, 7 js^).
 ) else (
     echo [WARN] Some assets are missing - hero falls back to the poster,
     echo        the music player skips missing tracks, and missing gallery
