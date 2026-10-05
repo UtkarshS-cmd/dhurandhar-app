@@ -1,0 +1,320 @@
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/.env.example', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/alembic.ini', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/config.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/requirements.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/test_api.py', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex b956be8..7f7bac9 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -1,6 +1,16 @@[m
+[32m+[m[32m*.log[m
+[32m+[m[32m__pycache__/[m
+[32m+[m[32m*.py[cod][m
+[32m+[m[32m.pytest_cache/[m
+[32m+[m[32mbackend/.pytest_cache/[m
+[32m+[m[32m.venv/[m
+[32m+[m[32mvenv/[m
+ backend/.venv/[m
+ backend/__pycache__/[m
+ backend/app/__pycache__/[m
+ backend/dhurandhar.db[m
+[32m+[m[32mbackend/*.db[m
+[32m+[m[32m*.sqlite[m
+[32m+[m[32m*.sqlite3[m
+ backend/.env[m
+[31m-*.pyc[m
+[32m+[m[32m.env[m
+[1mdiff --git a/README.md b/README.md[m
+[1mindex cc34639..fc6ca0e 100644[m
+[1m--- a/README.md[m
+[1m+++ b/README.md[m
+[36m@@ -40,7 +40,23 @@[m [mPYTHONPATH=. uvicorn app.main:app --host 0.0.0.0 --port 5000[m
+ [m
+ Open `http://localhost:5000`.[m
+ [m
+[31m-The local development database defaults to SQLite because PostgreSQL is not assumed to be installed. Set `DATABASE_URL` in `.env` to a PostgreSQL SQLAlchemy URL for deployment.[m
+[32m+[m[32mThe local development database defaults to SQLite because PostgreSQL is not assumed to be installed. Set `DATABASE_URL` in `.env` to a PostgreSQL SQLAlchemy URL for deployment. Real environment variables always take precedence over `backend/.env`; the `JWT_SECRET` in `.env.example` is a local-development placeholder only and must be replaced for any shared/production deployment.[m
+[32m+[m
+[32m+[m[32m## Testing[m
+[32m+[m
+[32m+[m[32mRun the automated baseline suite from the repository root (no manually running server required; tests use an isolated temporary SQLite database):[m
+[32m+[m
+[32m+[m[32m```bash[m
+[32m+[m[32mbackend/.venv/Scripts/python -m pytest backend/tests/test_api.py -v   # Windows[m
+[32m+[m[32m# ./backend/.venv/bin/python -m pytest backend/tests/test_api.py -v  # macOS/Linux[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m## Asset validation[m
+[32m+[m
+[32m+[m[32m```bash[m
+[32m+[m[32mbackend/.venv/Scripts/python check_assets.py   # Windows[m
+[32m+[m[32m# ./backend/.venv/bin/python check_assets.py  # macOS/Linux[m
+[32m+[m[32m```[m
+ [m
+ ## Architecture[m
+ [m
+[1mdiff --git a/backend/.env.example b/backend/.env.example[m
+[1mindex 0a99d6e..f8a45e1 100644[m
+[1m--- a/backend/.env.example[m
+[1m+++ b/backend/.env.example[m
+[36m@@ -1,3 +1,6 @@[m
+[32m+[m[32m# Local development defaults. Real environment variables always take[m
+[32m+[m[32m# precedence over this file. JWT_SECRET below is a placeholder for local[m
+[32m+[m[32m# setup only — generate a real secret for any shared/production deployment.[m
+ DATABASE_URL=sqlite:///./dhurandhar.db[m
+ JWT_SECRET=change-this-in-production[m
+ PAYMENT_MODE=mock[m
+[1mdiff --git a/backend/alembic.ini b/backend/alembic.ini[m
+[1mindex 69a6fc0..dd27471 100644[m
+[1m--- a/backend/alembic.ini[m
+[1m+++ b/backend/alembic.ini[m
+[36m@@ -1,6 +1,8 @@[m
+ [alembic][m
+ script_location = %(here)s/alembic[m
+[31m-sqlalchemy.url = sqlite:////mnt/data/dhurandhar-app/backend/dhurandhar.db[m
+[32m+[m[32m# Portable placeholder: backend/alembic/env.py overrides this with the[m
+[32m+[m[32m# DATABASE_URL coming from backend/app/config.py (env + backend/.env).[m
+[32m+[m[32msqlalchemy.url = sqlite:///./dhurandhar.db[m
+ [m
+ [loggers][m
+ keys = root,sqlalchemy,alembic[m
+[1mdiff --git a/backend/app/config.py b/backend/app/config.py[m
+[1mindex c051a6e..5edced2 100644[m
+[1m--- a/backend/app/config.py[m
+[1m+++ b/backend/app/config.py[m
+[36m@@ -1,12 +1,27 @@[m
+ [m
+ import os[m
+[32m+[m[32mimport warnings[m
+ from dataclasses import dataclass[m
+ from pathlib import Path[m
+[32m+[m[32mfrom urllib.parse import unquote[m
+ [m
+ ROOT = Path(__file__).resolve().parents[2][m
+ [m
+[32m+[m[32mDEV_JWT_DEFAULT = "dev-only-change-me"[m
+[32m+[m[32m# Placeholders that must never be treated as production secrets. The[m
+[32m+[m[32m# ``change-this-in-production`` value ships in ``.env.example``/compose files[m
+[32m+[m[32m# as an obvious placeholder; both values only silence the warning when a real[m
+[32m+[m[32m# JWT_SECRET is provided via environment or ``backend/.env``.[m
+[32m+[m[32mINSECURE_JWT_DEFAULTS = frozenset({"dev-only-change-me", "change-this-in-production"})[m
+[32m+[m[32m_ENV_KEYS = ("DATABASE_URL", "JWT_SECRET", "PAYMENT_MODE", "CORS_ORIGINS")[m
+[32m+[m
+[32m+[m
+ def _load_dotenv() -> None:[m
+[31m-    """Minimal .env loader (stdlib only) so backend/.env actually takes effect."""[m
+[32m+[m[32m    """Minimal .env loader (stdlib only) so backend/.env actually takes effect.[m
+[32m+[m
+[32m+[m[32m    Real environment variables always win: keys already present in[m
+[32m+[m[32m    ``os.environ`` are never overwritten by ``backend/.env``.[m
+[32m+[m[32m    """[m
+     env_path = ROOT / "backend" / ".env"[m
+     if not env_path.is_file():[m
+         return[m
+[36m@@ -16,29 +31,70 @@[m [mdef _load_dotenv() -> None:[m
+             continue[m
+         key, _, value = line.partition("=")[m
+         key, value = key.strip(), value.strip().strip("'\"")[m
+[31m-        if key and key not in os.environ:[m
+[32m+[m[32m        if key in _ENV_KEYS and key and key not in os.environ:[m
+             os.environ[key] = value[m
+ [m
+[32m+[m
+ _load_dotenv()[m
+ [m
+[32m+[m[32mDEFAULT_SQLITE_PATH = (ROOT / "backend" / "dhurandhar.db").resolve()[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _sqlite_url_for_path(path: Path) -> str:[m
+[32m+[m[32m    # ``Path.as_uri()`` yields ``file:///…`` which SQLAlchemy does not accept;[m
+[32m+[m[32m    # construct ``sqlite:///<abs path>`` with forward slashes instead so both[m
+[32m+[m[32m    # POSIX and Windows paths work.[m
+[32m+[m[32m    return f"sqlite:///{path.as_posix()}"[m
+[32m+[m
+[32m+[m
+ def _normalize_database_url(url: str) -> str:[m
+[31m-    """Resolve relative sqlite paths against backend/ so the DB location[m
+[31m-    does not depend on the process working directory."""[m
+[31m-    if url.startswith("sqlite:///./") or url.startswith("sqlite:///../"):[m
+[31m-        rel = url.split("sqlite:///", 1)[1][m
+[31m-        abs_path = (ROOT / "backend" / rel).resolve()[m
+[31m-        return f"sqlite:///{abs_path}"[m
+[32m+[m[32m    """Resolve sqlite paths portably; pass PostgreSQL URLs through unchanged."""[m
+[32m+[m[32m    url = (url or "").strip()[m
+[32m+[m[32m    if not url:[m
+[32m+[m[32m        return _sqlite_url_for_path(DEFAULT_SQLITE_PATH)[m
+[32m+[m[32m    if url.startswith("postgres://"):[m
+[32m+[m[32m        # SQLAlchemy ≥1.4 requires the ``postgresql://`` scheme; Render and[m
+[32m+[m[32m        # some providers still emit ``postgres://``.[m
+[32m+[m[32m        url = "postgresql://" + url[len("postgres://"):][m
+[32m+[m[32m    if url.startswith("sqlite:"):[m
+[32m+[m[32m        # Bare ``sqlite:///relative.db``, ``sqlite:///./x.db`` and absolute[m
+[32m+[m[32m        # paths (POSIX or Windows drive) are all accepted.[m
+[32m+[m[32m        prefix = "sqlite:///"[m
+[32m+[m[32m        rest = url[len(prefix):] if url.startswith(prefix) else url[len("sqlite:"):][m
+[32m+[m[32m        rest = rest.strip()[m
+[32m+[m[32m        if rest.startswith("./") or rest.startswith("../"):[m
+[32m+[m[32m            abs_path = (ROOT / "backend" / unquote(rest)).resolve()[m
+[32m+[m[32m            return _sqlite_url_for_path(abs_path)[m
+[32m+[m[32m        if rest.startswith("/") or (len(rest) >= 2 and rest[1] == ":") or rest.startswith("\\"):[m
+[32m+[m[32m            return f"sqlite:///{Path(unquote(rest)).as_posix()}"[m
+[32m+[m[32m        abs_path = (ROOT / "backend" / unquote(rest or "dhurandhar.db")).resolve()[m
+[32m+[m[32m        return _sqlite_url_for_path(abs_path)[m
+     return url[m
+ [m
+ @dataclass(frozen=True)[m
+ class Settings:[m
+     database_url: str = _normalize_database_url(os.getenv([m
+[31m-        "DATABASE_URL", f"sqlite:///{ROOT / 'backend' / 'dhurandhar.db'}"[m
+[32m+[m[32m        "DATABASE_URL", _sqlite_url_for_path(DEFAULT_SQLITE_PATH)[m
+     ))[m
+[31m-    jwt_secret: str = os.getenv("JWT_SECRET", "dev-only-change-me")[m
+[32m+[m[32m    jwt_secret: str = os.getenv("JWT_SECRET", DEV_JWT_DEFAULT)[m
+     payment_mode: str = os.getenv("PAYMENT_MODE", "mock")[m
+     cors_origins: tuple[str, ...] = tuple(x.strip() for x in os.getenv([m
+         "CORS_ORIGINS", "http://localhost:5000,http://127.0.0.1:5000"[m
+     ).split(",") if x.strip())[m
+ [m
+[32m+[m[32m    @property[m
+[32m+[m[32m    def has_dev_jwt_default(self) -> bool:[m
+[32m+[m[32m        return self.jwt_secret in INSECURE_JWT_DEFAULTS[m
+[32m+[m
+[32m+[m
+ settings = Settings()[m
+[32m+[m
+[32m+[m[32mif settings.has_dev_jwt_default:[m
+[32m+[m[32m    # Development-only fallback. Production must set JWT_SECRET; the full[m
+[32m+[m[32m    # Phase 2 JWT hardening policy is intentionally out of scope here.[m
+[32m+[m[32m    warnings.warn([m
+[32m+[m[32m        "JWT_SECRET is using a development placeholder; set JWT_SECRET in "[m
+[32m+[m[32m        "backend/.env or the environment for any shared/production deployment.",[m
+[32m+[m[32m        UserWarning,[m
+[32m+[m[32m        stacklevel=2,[m
+[32m+[m[32m    )[m
+[1mdiff --git a/backend/requirements.txt b/backend/requirements.txt[m
+[1mindex f91c03c..698f28d 100644[m
+[1m--- a/backend/requirements.txt[m
+[1m+++ b/backend/requirements.txt[m
+[36m@@ -5,4 +5,5 @@[m [malembic==1.18.4[m
+ pydantic[email]==2.13.4[m
+ PyJWT==2.13.0[m
+ httpx==0.28.1[m
+[32m+[m[32mpytest==9.1.1[m
+ psycopg[binary]>=3.2[m
+[1mdiff --git a/backend/tests/test_api.py b/backend/tests/test_api.py[m
+[1mindex ae0314b..643905f 100644[m
+[1m--- a/backend/tests/test_api.py[m
+[1m+++ b/backend/tests/test_api.py[m
+[36m@@ -1,58 +1,274 @@[m
+[32m+[m[32m"""Phase 1 baseline: in-process FastAPI tests with an isolated SQLite database.[m
+[32m+[m
+[32m+[m[32mNo manually running Uvicorn server is required. The suite never touches the[m
+[32m+[m[32mdeveloper's ``backend/dhurandhar.db``: ``DATABASE_URL``/``JWT_SECRET`` are set[m
+[32m+[m[32mbefore ``app`` is imported, and every test gets a freshly created schema with[m
+[32m+[m[32ma minimal seeded show.[m
+[32m+[m[32m"""[m
+[32m+[m[32mimport os[m
+[32m+[m[32mimport sys[m
+[32m+[m[32mimport tempfile[m
+ import uuid[m
+[31m-import httpx[m
+[31m-[m
+[31m-BASE = 'http://127.0.0.1:5000/api'[m
+[31m-[m
+[31m-def test_health_and_catalog():[m
+[31m-    with httpx.Client(base_url=BASE, timeout=10) as c:[m
+[31m-        assert c.get('/health').status_code == 200[m
+[31m-        cities = c.get('/cities').json()[m
+[31m-        assert len(cities) >= 10[m
+[31m-        city = next(x for x in cities if x['name'] == 'Mumbai')[m
+[31m-        theaters = c.get('/theaters', params={'city_id': city['id']}).json()[m
+[31m-        assert theaters[m
+[31m-        shows = c.get('/shows', params={'theater_id': theaters[0]['id'], 'date': __import__('datetime').date.today().isoformat()}).json()[m
+[31m-        assert shows[m
+[31m-        seats = c.get(f"/shows/{shows[0]['id']}/seats").json()[m
+[31m-        assert len(seats) == 80[m
+[31m-[m
+[31m-[m
+[31m-def test_booking_price_and_double_booking():[m
+[31m-    with httpx.Client(base_url=BASE, timeout=10) as c:[m
+[31m-        city = next(x for x in c.get('/cities').json() if x['name'] == 'Mumbai')[m
+[31m-        theater = c.get('/theaters', params={'city_id': city['id']}).json()[0][m
+[31m-        date = __import__('datetime').date.today().isoformat()[m
+[31m-        show = c.get('/shows', params={'theater_id': theater['id'], 'date': date}).json()[0][m
+[31m-        seats = c.get(f"/shows/{show['id']}/seats").json()[m
+[31m-        selected = [x for x in seats if x['status'] == 'AVAILABLE' and x['category'] == 'Silver'][:2][m
+[31m-        assert len(selected) == 2[m
+[31m-        user = {'full_name':'Pytest User','email':f'test-{uuid.uuid4().hex[:8]}@example.com','phone':'9876543210','password':'Test@1234'}[m
+[31m-        hold = c.post('/bookings/hold', json={'user':user,'show_id':show['id'],'seat_ids':[x['id'] for x in selected],'payment_method':'PENDING'})[m
+[31m-        assert hold.status_code == 201[m
+[31m-        data = hold.json()[m
+[31m-        assert float(data['total_amount']) == 700[m
+[31m-        conflict = c.post('/bookings/hold', json={'user':{**user,'email':f'other-{uuid.uuid4().hex[:8]}@example.com'},'show_id':show['id'],'seat_ids':[x['id'] for x in selected],'payment_method':'PENDING'})[m
+[31m-        assert conflict.status_code == 409[m
+[31m-        confirmed = c.post(f"/bookings/{data['booking_reference']}/confirm", json={'payment_method':'UPI / Google Pay / PhonePe'})[m
+[31m-        assert confirmed.status_code == 200[m
+[31m-        assert confirmed.json()['status'] == 'CONFIRMED'[m
+[31m-        assert confirmed.json()['payment_status'] == 'PAID'[m
+[31m-        conflict2 = c.post('/bookings/hold', json={'user':{**user,'email':f'other2-{uuid.uuid4().hex[:8]}@example.com'},'show_id':show['id'],'seat_ids':[x['id'] for x in selected],'payment_method':'PENDING'})[m
+[31m-        assert conflict2.status_code == 409[m
+[31m-[m
+[31m-[m
+[31m-def test_invalid_seat_and_auth():[m
+[31m-    with httpx.Client(base_url=BASE, timeout=10) as c:[m
+[31m-        city = next(x for x in c.get('/cities').json() if x['name'] == 'Delhi')[m
+[31m-        theater = c.get('/theaters', params={'city_id': city['id']}).json()[0][m
+[31m-        date = __import__('datetime').date.today().isoformat()[m
+[31m-        show = c.get('/shows', params={'theater_id': theater['id'], 'date': date}).json()[0][m
+[31m-        user = {'full_name':'Auth Test','email':f'auth-{uuid.uuid4().hex[:8]}@example.com','phone':'9876543210','password':'Test@1234'}[m
+[31m-        reg = c.post('/auth/register', json=user)[m
+[31m-        assert reg.status_code == 201[m
+[31m-        login = c.post('/auth/login', json={'email':user['email'],'password':user['password']})[m
+[31m-        assert login.status_code == 200[m
+[31m-        bad = c.post('/auth/login', json={'email':user['email'],'password':'wrong'})[m
+[31m-        assert bad.status_code == 401[m
+[31m-        invalid = c.post('/bookings/hold', json={'user':{**user,'email':f'invalid-{uuid.uuid4().hex[:8]}@example.com'},'show_id':show['id'],'seat_ids':[999999],'payment_method':'PENDING'})[m
+[31m-        assert invalid.status_code == 422[m
+[32m+[m[32mfrom datetime import date, time[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mimport pytest[m
+[32m+[m[32mfrom fastapi.testclient import TestClient[m
+[32m+[m[32mfrom sqlalchemy import create_engine[m
+[32m+[m[32mfrom sqlalchemy.orm import sessionmaker[m
+[32m+[m
+[32m+[m[32mBACKEND_DIR = Path(__file__).resolve().parents[1][m
+[32m+[m[32msys.path.insert(0, str(BACKEND_DIR))[m
+[32m+[m
+[32m+[m[32m_TMPDIR = tempfile.TemporaryDirectory(prefix="dhurandhar-test-")[m
+[32m+[m[32m_TEST_DB_PATH = Path(_TMPDIR.name, "test.db")[m
+[32m+[m[32mos.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH.as_posix()}"[m
+[32m+[m[32mos.environ["JWT_SECRET"] = "phase1-test-secret-that-is-long-enough-for-hs256"[m
+[32m+[m[32mos.environ["PAYMENT_MODE"] = "mock"[m
+[32m+[m
+[32m+[m[32mfrom app.db import Base, get_db  # noqa: E402[m
+[32m+[m[32mfrom app.main import app  # noqa: E402[m
+[32m+[m[32mfrom app.models import (  # noqa: E402[m
+[32m+[m[32m    City,[m
+[32m+[m[32m    Movie,[m
+[32m+[m[32m    Screen,[m
+[32m+[m[32m    Seat,[m
+[32m+[m[32m    Show,[m
+[32m+[m[32m    ShowSeat,[m
+[32m+[m[32m    ShowSeatStatus,[m
+[32m+[m[32m    Theater,[m
+[32m+[m[32m)[m
+[32m+[m
+[32m+[m[32mengine = create_engine([m
+[32m+[m[32m    os.environ["DATABASE_URL"],[m
+[32m+[m[32m    connect_args={"check_same_thread": False},[m
+[32m+[m[32m    future=True,[m
+[32m+[m[32m)[m
+[32m+[m[32mTestingSessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _seed_minimal_show(db):[m
+[32m+[m[32m    """One city/theater/screen/show with 80 seats: 20 Gold / 30 Silver / 30 Bronze."""[m
+[32m+[m[32m    movie = Movie(title="

@@ -24,6 +24,23 @@ from .security import (
     AuthenticationError, generate_booking_reference, is_valid_booking_reference,
 )
 from .ratelimit import rate_limit
+from .services.booking import (
+    BookingConflict,
+    BookingEngineError,
+    BookingExpired,
+    BookingNotFound,
+    InvalidSeatRequest,
+    SeatConflict,
+    ShowNotFound,
+    booking_transaction,
+    cleanup_expired_holds as cleanup_expired_holds_service,
+    confirm_booking_reference,
+    create_hold_for_user,
+    transition_booking,
+    transition_payment,
+    transition_seat,
+    validate_show_and_seats as validate_show_and_seats_service,
+)
 from .services.payment import payment_gateway
 
 app = FastAPI(title="Dhurandhar Cinema API", version="1.0.0")
@@ -88,22 +105,7 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     return JSONResponse(status_code=422, content={"detail": detail})
 
 def cleanup_expired_holds(db: Session):
-    now = datetime.utcnow()
-    seats = db.scalars(select(ShowSeat).where(
-        ShowSeat.status == ShowSeatStatus.HELD.value,
-        ShowSeat.hold_expires_at < now
-    )).all()
-    for ss in seats:
-        ss.status = ShowSeatStatus.AVAILABLE.value
-        ss.hold_expires_at = None
-        ss.booking_id = None
-    expired_bookings = db.scalars(select(Booking).where(
-        Booking.status == BookingStatus.HELD.value,
-        Booking.hold_expires_at < now
-    )).all()
-    for b in expired_bookings:
-        b.status = BookingStatus.CANCELLED.value
-    db.commit()
+    cleanup_expired_holds_service(db)
 
 def current_user(db: Session = Depends(get_db), authorization: str | None = Header(default=None)) -> User:
     """Resolve the authenticated user or raise a uniform 401.
@@ -214,19 +216,7 @@ def get_or_create_user(payload: UserCreate, db: Session) -> User:
     return user
 
 def validate_show_and_seats(show_id: int, seat_ids: list[int], db: Session):
-    show=db.get(Show,show_id)
-    if not show or show.status!="ACTIVE":
-        raise HTTPException(404,"Show not found or inactive")
-    if len(set(seat_ids)) != len(seat_ids):
-        raise HTTPException(422,"Duplicate seats are not allowed")
-    rows=db.execute(
-        select(ShowSeat,Seat).join(Seat,ShowSeat.seat_id==Seat.id).where(
-            ShowSeat.show_id==show_id, Seat.id.in_(seat_ids)
-        )
-    ).all()
-    if len(rows)!=len(seat_ids):
-        raise HTTPException(422,"One or more seats do not belong to this show")
-    return show, rows
+    return validate_show_and_seats_service(show_id, seat_ids, db)
 
 # Booking security model (Phase 2)
 # --------------------------------
@@ -244,38 +234,13 @@ def validate_show_and_seats(show_id: int, seat_ids: list[int], db: Session):
 def create_hold(payload: BookingCreateRequest, db: Session = Depends(get_db)):
     cleanup_expired_holds(db)
     try:
-        with db.begin():
-            user=get_or_create_user(payload.user,db)
-            show, rows=validate_show_and_seats(payload.show_id,payload.seat_ids,db)
-            # PostgreSQL row locking; SQLite serializes writes.
-            locked=db.scalars(
-                select(ShowSeat).where(ShowSeat.show_id==show.id,ShowSeat.seat_id.in_(payload.seat_ids)).with_for_update()
-            ).all()
-            now=datetime.utcnow()
-            for ss in locked:
-                if ss.status == ShowSeatStatus.BOOKED.value:
-                    raise HTTPException(409, detail={"message":"One or more selected seats are already booked","seat_ids":[ss.seat_id]})
-                if ss.status == ShowSeatStatus.HELD.value and ss.hold_expires_at and ss.hold_expires_at > now:
-                    raise HTTPException(409, detail={"message":"One or more selected seats are temporarily held","seat_ids":[ss.seat_id]})
-            expires=now+timedelta(minutes=10)
-            # 144-bit cryptographically random reference (see security.py);
-            # never derived from database IDs or short token_hex output.
-            ref=generate_booking_reference()
-            total=sum(Decimal(seat.price) for _,seat in rows)
-            booking=Booking(
-                booking_reference=ref,user_id=user.id,show_id=show.id,status=BookingStatus.HELD.value,
-                total_amount=total,payment_method=payload.payment_method,payment_status=PaymentStatus.PENDING.value,
-                hold_expires_at=expires
-            )
-            db.add(booking); db.flush()
-            for ss,seat in rows:
-                ss.status=ShowSeatStatus.HELD.value; ss.hold_expires_at=expires; ss.booking_id=booking.id
-                db.add(BookingSeat(booking_id=booking.id,show_id=show.id,seat_id=seat.id,price=seat.price))
+        user = get_or_create_user(payload.user, db)
+        booking = create_hold_for_user(db, user, payload.show_id, payload.seat_ids, payload.payment_method)
         return booking_out(db, booking)
+    except BookingEngineError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except HTTPException:
-        db.rollback(); raise
-    except Exception:
-        db.rollback(); raise
+        raise
 
 def booking_out(db: Session, booking: Booking) -> BookingOut:
     seats=db.scalars(select(Seat).join(BookingSeat,BookingSeat.seat_id==Seat.id).where(BookingSeat.booking_id==booking.id).order_by(Seat.row_label,Seat.seat_number)).all()
@@ -289,34 +254,21 @@ def booking_out(db: Session, booking: Booking) -> BookingOut:
           dependencies=[Depends(rate_limit("booking_ref"))])
 def confirm_booking(reference: str, payload: BookingConfirmRequest, db: Session = Depends(get_db)):
     cleanup_expired_holds(db)
-    # Malformed references are indistinguishable from unknown ones (404).
     if not is_valid_booking_reference(reference):
-        raise HTTPException(404,"Booking hold not found")
-    with db.begin():
-        booking=db.scalar(select(Booking).where(Booking.booking_reference==reference).with_for_update())
-        if not booking: raise HTTPException(404,"Booking hold not found")
-        if booking.status != BookingStatus.HELD.value: raise HTTPException(409,"Booking is no longer available for confirmation")
-        if not booking.hold_expires_at or booking.hold_expires_at < datetime.utcnow():
-            booking.status=BookingStatus.CANCELLED.value
-            raise HTTPException(409,"Seat hold expired; please choose seats again")
-        seat_rows=db.scalars(select(ShowSeat).where(ShowSeat.booking_id==booking.id).with_for_update()).all()
-        if len(seat_rows)==0 or any(s.status!=ShowSeatStatus.HELD.value for s in seat_rows):
-            raise HTTPException(409,"Selected seats are no longer held")
-        result=payment_gateway.charge(float(booking.total_amount),payload.payment_method)
-        booking.payment_method=payload.payment_method
-        booking.payment_status=result.status
-        booking.status=BookingStatus.CONFIRMED.value
-        booking.hold_expires_at=None
-        for ss in seat_rows:
-            ss.status=ShowSeatStatus.BOOKED.value
-            ss.hold_expires_at=None
-    return booking_out(db,booking)
+        raise HTTPException(404, "Booking hold not found")
+    try:
+        booking = confirm_booking_reference(db, reference, payload.payment_method)
+        return booking_out(db, booking)
+    except BookingEngineError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except HTTPException:
+        raise
 
 @app.post("/api/bookings", response_model=BookingOut, status_code=201,
           dependencies=[Depends(rate_limit("hold")), Depends(rate_limit("hold_identity", "identity"))])
 def create_booking(payload: BookingCreateRequest, db: Session = Depends(get_db)):
-    hold=create_hold(payload,db)
-    return confirm_booking(hold.booking_reference,BookingConfirmRequest(payment_method=payload.payment_method),db)
+    hold = create_hold(payload, db)
+    return confirm_booking(hold.booking_reference, BookingConfirmRequest(payment_method=payload.payment_method), db)
 
 @app.get("/api/bookings/{reference}", response_model=BookingOut,
          dependencies=[Depends(rate_limit("booking_ref"))])
