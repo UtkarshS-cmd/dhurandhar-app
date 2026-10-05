@@ -3,9 +3,14 @@
 # FastAPI backend from one process. Works locally, on Docker, Render, Fly, etc.
 FROM python:3.12-slim
 
+# Production configuration policy: APP_ENV=production makes the app fail
+# fast at startup unless a real JWT_SECRET (>= 32 chars) is provided at run
+# time. Generate one with:
+#   python -c "import secrets; print(secrets.token_urlsafe(48))"
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    APP_ENV=production
 
 WORKDIR /app
 

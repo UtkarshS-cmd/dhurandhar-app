@@ -183,6 +183,16 @@ async function contact(){
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 function initActions(){
+  // Replaces the former inline onerror attributes on gallery images so the
+  // Content-Security-Policy can keep script-src 'self' (no inline handlers).
+  // Error events do not bubble, hence the capture phase.
+  document.addEventListener('error',(event)=>{
+    const el=event.target;
+    if(el && el.tagName==='IMG'){
+      const item=el.closest('.g-item');
+      if(item) item.style.display='none';
+    }
+  },true);
   document.addEventListener('click',(event)=>{
     const target=event.target.closest('[data-action],[data-auth-tab]');
     if(!target)return;

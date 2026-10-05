@@ -1,13 +1,52 @@
 
 from datetime import date, datetime, time
 from decimal import Decimal
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-class UserCreate(BaseModel):
+# Payment methods accepted by the API. "PENDING" is the placeholder the
+# checkout sends while holding seats; the remaining values mirror the payment
+# <select> options in index.html. The backend — not the frontend — is the
+# authority on which values are valid.
+PaymentMethod = Literal[
+    "PENDING",
+    "UPI / Google Pay / PhonePe",
+    "Credit / Debit Card",
+    "Net Banking",
+    "Pay at Counter",
+]
+
+# Seats are positive database identifiers; 0/negative values are rejected by
+# schema validation before any query runs.
+SeatId = Annotated[int, Field(ge=1)]
+
+
+def _strip(value: str) -> str:
+    return value.strip() if isinstance(value, str) else value
+
+
+class _NormalizedEmail(BaseModel):
+    """Base for schemas with an ``email`` field: trim + lowercase once, at
+    the API edge, so uniqueness/lookup can never be bypassed with casing."""
+
+    @field_validator("email", mode="before", check_fields=False)
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return _strip(value).lower() if isinstance(value, str) else value
+
+
+class UserCreate(_NormalizedEmail):
     full_name: str = Field(min_length=3, max_length=120)
     email: EmailStr
-    phone: str
+    phone: str = Field(min_length=10, max_length=30)
     password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def strip_full_name(cls, value: str) -> str:
+        # Leading/trailing whitespace removed; internal spaces preserved.
+        return _strip(value)
 
     @field_validator("phone")
     @classmethod
@@ -19,7 +58,7 @@ class UserCreate(BaseModel):
             raise ValueError("Enter a valid 10-digit Indian mobile number")
         return digits
 
-class LoginRequest(BaseModel):
+class LoginRequest(_NormalizedEmail):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
 
@@ -52,18 +91,19 @@ class SeatOut(BaseModel):
 
 class HoldRequest(BaseModel):
     user: UserCreate | None = None
-    user_id: int | None = None
-    show_id: int
-    seat_ids: list[int] = Field(min_length=1, max_length=6)
+    user_id: int | None = Field(default=None, ge=1)
+    show_id: int = Field(ge=1)
+    seat_ids: list[SeatId] = Field(min_length=1, max_length=6)
 
 class BookingConfirmRequest(BaseModel):
-    payment_method: str = Field(min_length=2, max_length=60)
+    payment_method: PaymentMethod
 
 class BookingCreateRequest(BaseModel):
-    user: UserCreate
-    show_id: int
-    seat_ids: list[int] = Field(min_length=1, max_length=6)
-    payment_method: str = Field(min_length=2, max_length=60)
+    user: UserCreate  # nested schema normalizes/validates the email
+    show_id: int = Field(ge=1)
+    # 1..6 seats; duplicate rejection happens in the booking engine (422).
+    seat_ids: list[SeatId] = Field(min_length=1, max_length=6)
+    payment_method: PaymentMethod
 
 class BookingOut(BaseModel):
     booking_reference: str
@@ -81,12 +121,27 @@ class ReviewCreate(BaseModel):
     body: str = Field(min_length=2, max_length=3000)
     spoiler: bool = False
 
-class NewsletterCreate(BaseModel):
+    @field_validator("title", "body", mode="before")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return _strip(value)
+
+class NewsletterCreate(_NormalizedEmail):
     name: str = Field(min_length=2, max_length=120)
     email: EmailStr
 
-class ContactCreate(BaseModel):
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        return _strip(value)
+
+class ContactCreate(_NormalizedEmail):
     name: str = Field(min_length=2, max_length=120)
     email: EmailStr
     subject: str = Field(min_length=2, max_length=120)
     message: str = Field(min_length=5, max_length=5000)
+
+    @field_validator("name", "subject", "message", mode="before")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return _strip(value)

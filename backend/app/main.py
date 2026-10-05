@@ -1,13 +1,13 @@
 
 from datetime import date, datetime, timedelta, time
 from decimal import Decimal
-import secrets
 from pathlib import Path
 
-from fastapi import FastAPI, Depends, HTTPException, status, Header
+from fastapi import FastAPI, Depends, HTTPException, status, Header, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from sqlalchemy import select, or_, func
 from sqlalchemy.orm import Session, joinedload
 
@@ -19,17 +19,73 @@ from .models import (
     ShowSeatStatus, BookingStatus, PaymentStatus
 )
 from .schemas import *
-from .security import hash_password, verify_password, create_token, decode_token
+from .security import (
+    hash_password, verify_password, create_token, decode_token,
+    AuthenticationError, generate_booking_reference, is_valid_booking_reference,
+)
+from .ratelimit import rate_limit
 from .services.payment import payment_gateway
 
 app = FastAPI(title="Dhurandhar Cinema API", version="1.0.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=list(settings.cors_origins),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+
+# CORS is environment-driven (see config._resolve_cors_origins): localhost in
+# development, explicit origins only in production, and never "*" while
+# credentialed requests are allowed. An empty tuple means same-origin only —
+# which is the normal single-process deployment where the API also serves the
+# frontend. Methods/headers are restricted to what the frontend actually uses.
+if settings.cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.cors_origins),
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization"],
+    )
+
+# Initial Content-Security-Policy compatible with the current frontend:
+# scripts are same-origin modules only (index.html has no inline scripts or
+# event handlers after Phase 2), styles may be inline (the markup uses
+# style="" attributes extensively) plus Google Fonts; media/images are local;
+# frame-ancestors/object-src lock down embedding. This is a pragmatic first
+# policy, not a completed browser-security audit.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' data: https://fonts.gstatic.com; "
+    "img-src 'self' data:; "
+    "media-src 'self'; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    return response
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    """422 responses stay 422 but never echo submitted values.
+
+    Pydantic's raw errors include the ``input`` field, which would reflect
+    submitted passwords/PII back into responses and logs. Only the location,
+    message and error type are returned.
+    """
+    detail = [
+        {"loc": error.get("loc"), "msg": error.get("msg"), "type": error.get("type")}
+        for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": detail})
 
 def cleanup_expired_holds(db: Session):
     now = datetime.utcnow()
@@ -50,22 +106,34 @@ def cleanup_expired_holds(db: Session):
     db.commit()
 
 def current_user(db: Session = Depends(get_db), authorization: str | None = Header(default=None)) -> User:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Authentication required")
+    """Resolve the authenticated user or raise a uniform 401.
+
+    Authorization boundary: every failure mode (missing header, wrong
+    scheme, malformed/expired/tampered token, token subject that no longer
+    exists in the database) returns the same bare 401 with
+    ``WWW-Authenticate: Bearer`` — no JWT internals, no database details,
+    no account-existence signals.
+    """
+    if not authorization:
+        raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"})
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"})
     try:
-        uid = decode_token(authorization.split(" ", 1)[1])
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
+        uid = decode_token(token.strip())
+    except AuthenticationError:
+        raise HTTPException(401, "Invalid or expired session", headers={"WWW-Authenticate": "Bearer"})
     user = db.get(User, uid)
     if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(401, "Invalid or expired session", headers={"WWW-Authenticate": "Bearer"})
     return user
 
 @app.get("/api/health")
 def health():
     return {"status": "ok", "payment_mode": settings.payment_mode}
 
-@app.post("/api/auth/register", response_model=AuthOut, status_code=201)
+@app.post("/api/auth/register", response_model=AuthOut, status_code=201,
+          dependencies=[Depends(rate_limit("register"))])
 def register(payload: UserCreate, db: Session = Depends(get_db)):
     if db.scalar(select(User).where(User.email == payload.email.lower())):
         raise HTTPException(status_code=409, detail="An account with this email already exists")
@@ -78,8 +146,11 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     db.add(user); db.commit(); db.refresh(user)
     return AuthOut(access_token=create_token(user.id), user=UserOut.model_validate(user, from_attributes=True))
 
-@app.post("/api/auth/login", response_model=AuthOut)
+@app.post("/api/auth/login", response_model=AuthOut,
+          dependencies=[Depends(rate_limit("login", "identity")), Depends(rate_limit("login_ip"))])
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    # Uniform failure for unknown email and wrong password alike: responses
+    # never reveal which accounts exist.
     user = db.scalar(select(User).where(User.email == payload.email.lower()))
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -157,7 +228,19 @@ def validate_show_and_seats(show_id: int, seat_ids: list[int], db: Session):
         raise HTTPException(422,"One or more seats do not belong to this show")
     return show, rows
 
-@app.post("/api/bookings/hold", response_model=BookingOut, status_code=201)
+# Booking security model (Phase 2)
+# --------------------------------
+# Guest checkout is intentional: a hold can be created with embedded user
+# details and later confirmed with *only* the booking reference. The
+# reference is therefore a capability, protected in three layers:
+#   1. 144 bits of entropy from ``secrets`` (unguessable, see security.py),
+#   2. a shape check before any database access (uniform 404s),
+#   3. per-IP rate limits on lookup/confirm (brute-force enumeration cap).
+# The booking payload intentionally contains no user PII (no email/phone/
+# name), so a leaked reference reveals seats/amount/status only.
+# Authenticated listings live behind ``/api/me/bookings`` (own bookings only).
+@app.post("/api/bookings/hold", response_model=BookingOut, status_code=201,
+          dependencies=[Depends(rate_limit("hold")), Depends(rate_limit("hold_identity", "identity"))])
 def create_hold(payload: BookingCreateRequest, db: Session = Depends(get_db)):
     cleanup_expired_holds(db)
     try:
@@ -175,7 +258,9 @@ def create_hold(payload: BookingCreateRequest, db: Session = Depends(get_db)):
                 if ss.status == ShowSeatStatus.HELD.value and ss.hold_expires_at and ss.hold_expires_at > now:
                     raise HTTPException(409, detail={"message":"One or more selected seats are temporarily held","seat_ids":[ss.seat_id]})
             expires=now+timedelta(minutes=10)
-            ref="DHR-"+secrets.token_hex(4).upper()
+            # 144-bit cryptographically random reference (see security.py);
+            # never derived from database IDs or short token_hex output.
+            ref=generate_booking_reference()
             total=sum(Decimal(seat.price) for _,seat in rows)
             booking=Booking(
                 booking_reference=ref,user_id=user.id,show_id=show.id,status=BookingStatus.HELD.value,
@@ -200,9 +285,13 @@ def booking_out(db: Session, booking: Booking) -> BookingOut:
         seats=[f"{s.row_label}{s.seat_number}" for s in seats],created_at=booking.created_at,hold_expires_at=booking.hold_expires_at
     )
 
-@app.post("/api/bookings/{reference}/confirm", response_model=BookingOut)
+@app.post("/api/bookings/{reference}/confirm", response_model=BookingOut,
+          dependencies=[Depends(rate_limit("booking_ref"))])
 def confirm_booking(reference: str, payload: BookingConfirmRequest, db: Session = Depends(get_db)):
     cleanup_expired_holds(db)
+    # Malformed references are indistinguishable from unknown ones (404).
+    if not is_valid_booking_reference(reference):
+        raise HTTPException(404,"Booking hold not found")
     with db.begin():
         booking=db.scalar(select(Booking).where(Booking.booking_reference==reference).with_for_update())
         if not booking: raise HTTPException(404,"Booking hold not found")
@@ -223,14 +312,20 @@ def confirm_booking(reference: str, payload: BookingConfirmRequest, db: Session 
             ss.hold_expires_at=None
     return booking_out(db,booking)
 
-@app.post("/api/bookings", response_model=BookingOut, status_code=201)
+@app.post("/api/bookings", response_model=BookingOut, status_code=201,
+          dependencies=[Depends(rate_limit("hold")), Depends(rate_limit("hold_identity", "identity"))])
 def create_booking(payload: BookingCreateRequest, db: Session = Depends(get_db)):
     hold=create_hold(payload,db)
     return confirm_booking(hold.booking_reference,BookingConfirmRequest(payment_method=payload.payment_method),db)
 
-@app.get("/api/bookings/{reference}", response_model=BookingOut)
+@app.get("/api/bookings/{reference}", response_model=BookingOut,
+         dependencies=[Depends(rate_limit("booking_ref"))])
 def get_booking(reference: str, db: Session = Depends(get_db)):
     cleanup_expired_holds(db)
+    # Guest capability lookup: reference shape is validated first so probing
+    # never reaches the database and always returns the same 404.
+    if not is_valid_booking_reference(reference):
+        raise HTTPException(404,"Booking not found")
     b=db.scalar(select(Booking).where(Booking.booking_reference==reference))
     if not b: raise HTTPException(404,"Booking not found")
     return booking_out(db,b)
@@ -269,13 +364,13 @@ def create_review(payload: ReviewCreate, db: Session=Depends(get_db), user: User
     r=Review(user_id=user.id,**payload.model_dump()); db.add(r); db.commit(); db.refresh(r)
     return {"id":r.id}
 
-@app.post("/api/newsletter", status_code=201)
+@app.post("/api/newsletter", status_code=201, dependencies=[Depends(rate_limit("newsletter"))])
 def newsletter(payload: NewsletterCreate, db: Session=Depends(get_db)):
     if not db.scalar(select(NewsletterSubscriber).where(NewsletterSubscriber.email==payload.email.lower())):
         db.add(NewsletterSubscriber(name=payload.name.strip(),email=payload.email.lower())); db.commit()
     return {"status":"subscribed"}
 
-@app.post("/api/contact", status_code=201)
+@app.post("/api/contact", status_code=201, dependencies=[Depends(rate_limit("contact"))])
 def contact(payload: ContactCreate, db: Session=Depends(get_db)):
     db.add(ContactMessage(**payload.model_dump())); db.commit()
     return {"status":"received"}
