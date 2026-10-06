@@ -28,6 +28,30 @@ class PaymentStatus(str, Enum):
     PAID = "PAID"
     FAILED = "FAILED"
 
+
+class PaymentAttemptStatus(str, Enum):
+    """External payment lifecycle (Phase 4).
+
+    The legacy ``Booking.payment_status`` (PENDING/PAID/FAILED) is preserved
+    as a booking-level mirror so Phase 3 readers keep working. The
+    per-attempt table below is the authoritative external-payment state.
+    """
+
+    CREATED = "CREATED"
+    PENDING = "PENDING"
+    AUTHORIZED = "AUTHORIZED"
+    PAID = "PAID"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    REFUNDED = "REFUNDED"
+
+
+class WebhookEventStatus(str, Enum):
+    RECEIVED = "RECEIVED"
+    PROCESSED = "PROCESSED"
+    IGNORED = "IGNORED"
+    FAILED = "FAILED"
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -108,6 +132,7 @@ class Booking(Base):
     user = relationship("User", back_populates="bookings")
     show = relationship("Show")
     booking_seats = relationship("BookingSeat", back_populates="booking", cascade="all, delete-orphan")
+    payment_attempts = relationship("PaymentAttempt", back_populates="booking", cascade="all, delete-orphan")
 
 class ShowSeat(Base):
     __tablename__ = "show_seats"
@@ -131,6 +156,59 @@ class BookingSeat(Base):
     booking = relationship("Booking", back_populates="booking_seats")
     seat = relationship("Seat")
     __table_args__ = (UniqueConstraint("booking_id", "seat_id", name="uq_booking_seat"),)
+
+
+class PaymentAttempt(Base):
+    """One external payment attempt against a booking (Phase 4).
+
+    A booking keeps exactly one *active* attempt (CREATED/PENDING/AUTHORIZED);
+    older attempts are terminal history (PAID/FAILED/CANCELLED/REFUNDED).
+    Internal identity is ``id``; external identity is
+    (``provider``, ``provider_order_id``, ``provider_payment_id``). The
+    ``amount``/``currency`` snapshot is server-authoritative, copied from the
+    booking inside the creation transaction — never from client input.
+    """
+
+    __tablename__ = "payment_attempts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(30), default="mock", index=True)
+    provider_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    amount: Mapped[float] = mapped_column(Numeric(10, 2))
+    currency: Mapped[str] = mapped_column(String(10), default="INR")
+    status: Mapped[str] = mapped_column(String(20), default=PaymentAttemptStatus.CREATED.value, index=True)
+    attempt_no: Mapped[int] = mapped_column(Integer, default=1)
+    failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    booking = relationship("Booking", back_populates="payment_attempts")
+    __table_args__ = (
+        UniqueConstraint("booking_id", "attempt_no", name="uq_payment_attempt_no"),
+        Index("ix_payment_attempt_provider_order", "provider", "provider_order_id"),
+    )
+
+
+class PaymentWebhookEvent(Base):
+    """Durable webhook/event idempotency record (Phase 4).
+
+    Unique on (provider, event_id) so redeliveries — even after a process
+    restart — are detected from the database, never from memory.
+    """
+
+    __tablename__ = "payment_webhook_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(30), index=True)
+    event_id: Mapped[str] = mapped_column(String(160), index=True)
+    event_type: Mapped[str] = mapped_column(String(120))
+    payment_attempt_id: Mapped[int | None] = mapped_column(
+        ForeignKey("payment_attempts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default=WebhookEventStatus.RECEIVED.value, index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint("provider", "event_id", name="uq_webhook_provider_event"),)
 
 class Review(Base):
     __tablename__ = "reviews"

@@ -21,7 +21,8 @@ INSECURE_JWT_DEFAULTS = frozenset({
 MIN_JWT_SECRET_LENGTH = 32
 ALLOWED_APP_ENVS = frozenset({"development", "production", "test"})
 DEFAULT_DEV_CORS_ORIGINS = ("http://localhost:5000", "http://127.0.0.1:5000")
-_ENV_KEYS = ("DATABASE_URL", "JWT_SECRET", "PAYMENT_MODE", "CORS_ORIGINS", "APP_ENV")
+_ENV_KEYS = ("DATABASE_URL", "JWT_SECRET", "PAYMENT_MODE", "PAYMENT_PROVIDER", "CORS_ORIGINS", "APP_ENV",
+             "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET")
 
 
 def _load_dotenv() -> None:
@@ -159,6 +160,22 @@ def _resolve_cors_origins(app_env: str, raw: str | None) -> tuple[str, ...]:
     return origins
 
 
+def _resolve_payment_provider(raw: str | None, legacy_mode: str | None) -> str:
+    """Resolve the active payment provider name.
+
+    ``PAYMENT_PROVIDER`` is authoritative; ``PAYMENT_MODE`` is kept as a
+    legacy alias so existing ``PAYMENT_MODE=mock`` deployments keep working.
+    """
+    value = (raw or "").strip().lower()
+    if not value:
+        value = (legacy_mode or "mock").strip().lower()
+    if value not in ("mock", "razorpay"):
+        raise RuntimeError(
+            f"Unknown payment provider {value!r}; expected 'mock' or 'razorpay'."
+        )
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     # Fields resolve from the environment at instantiation time so the policy
@@ -168,6 +185,12 @@ class Settings:
         "DATABASE_URL", _sqlite_url_for_path(DEFAULT_SQLITE_PATH)
     )))
     payment_mode: str = field(default_factory=lambda: os.getenv("PAYMENT_MODE", "mock"))
+    payment_provider: str = field(default_factory=lambda: _resolve_payment_provider(
+        os.getenv("PAYMENT_PROVIDER"), os.getenv("PAYMENT_MODE", "mock")
+    ))
+    razorpay_key_id: str = field(default_factory=lambda: (os.getenv("RAZORPAY_KEY_ID", "") or "").strip())
+    razorpay_key_secret: str = field(default_factory=lambda: (os.getenv("RAZORPAY_KEY_SECRET", "") or "").strip())
+    razorpay_webhook_secret: str = field(default_factory=lambda: (os.getenv("RAZORPAY_WEBHOOK_SECRET", "") or "").strip())
     cors_origins: tuple[str, ...] = field(default_factory=lambda: _resolve_cors_origins(
         _resolve_app_env(os.getenv("APP_ENV")), os.getenv("CORS_ORIGINS")
     ))

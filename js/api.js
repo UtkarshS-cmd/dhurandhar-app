@@ -37,6 +37,17 @@ export const confirmBooking = (reference, payment_method) =>
     method:'POST', body:JSON.stringify({payment_method})
   });
 export const fetchBooking = (reference) => request(`/bookings/${encodeURIComponent(reference)}`);
+
+// Phase 4 — payment orders are created server-side; the client only ever
+// sends a booking reference (no amounts, no provider ids, no statuses).
+export const createPaymentOrder = (booking_reference) =>
+  request('/payments/orders', {method:'POST', body:JSON.stringify({booking_reference})});
+export const retryPaymentOrder = (booking_reference) =>
+  request('/payments/retry', {method:'POST', body:JSON.stringify({booking_reference})});
+// Authoritative payment/booking status — the backend is the only source of
+// truth after checkout; the browser never trusts provider callbacks alone.
+export const fetchPaymentStatus = (reference) =>
+  request(`/payments/status/${encodeURIComponent(reference)}`);
 export const fetchMyBookings = (token) => request('/me/bookings', {headers:{Authorization:`Bearer ${token}`}});
 
 export const fetchReviews = () => request('/reviews');

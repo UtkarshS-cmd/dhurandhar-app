@@ -109,11 +109,12 @@ The suite covers the Phase 1 baseline plus Phase 2 security tests: JWT/auth edge
   booking; repeat confirm of a `CONFIRMED` booking is a deterministic 409
   (frontend also disables the button + reconciles lost responses via
   `GET /api/bookings/{reference}`).
-- **Payment boundary** (mock only): gateway crash rolls back, hold stays
-  `HELD`/`PENDING` (502); explicit decline persists `FAILED` without
-  confirming (402, seats stay `HELD`); seats become `BOOKED` only on success.
-  No Razorpay/Stripe/webhooks — the `PaymentGateway.charge()` seam is the
-  Phase 4 insertion point.
+- **Payment boundary** (Phase 4): provider-agnostic `PaymentService` +
+  `PaymentProvider` abstraction (`backend/app/services/payments/`). Mock
+  gateway crash rolls back, hold stays `HELD`/`PENDING` (502); explicit
+  decline persists `FAILED` without confirming (402, seats stay `HELD`);
+  seats become `BOOKED` only on verified success. See the Phase 4 payment
+  architecture section below.
 - **DB constraints** (no migration needed — all present in the initial
   schema): `users.email`, `bookings.booking_reference`, `uq_show_seat`,
   `uq_booking_seat`, `uq_screen_showtime` are enforced by the database, not
@@ -151,7 +152,143 @@ backend/.venv/Scripts/python check_assets.py   # Windows
 7. The backend generates the booking reference.
 8. Failed/double bookings return structured errors and the UI refreshes seat availability.
 
-`PAYMENT_MODE=mock` is explicit development behavior. `Pay at Counter` remains payment `PENDING`; other methods use a mock paid response until a real gateway adapter is configured.
+`PAYMENT_MODE=mock` / `PAYMENT_PROVIDER=mock` is explicit development behavior. `Pay at Counter` remains payment `PENDING`; other methods use a mock paid response until a real gateway adapter is configured.
+
+## Payment architecture (Phase 4)
+
+The cinema backend **owns** booking/payment state; the external provider is
+only an integration boundary:
+
+```
+Cinema Application
+       │
+  PaymentService            backend/app/services/payments/service.py
+       │
+  PaymentProvider           backend/app/services/payments/base.py
+      / \
+MockProvider          RazorpayProvider
+ (mock.py)               (razorpay.py) ── Razorpay API ── Webhook
+```
+
+- **Provider abstraction** — `PaymentProvider` (ABC) exposes only normalized
+  dataclasses: `PaymentOrder`, `PaymentVerification`, `WebhookEvent`,
+  `PaymentResult`. No Razorpay SDK type ever leaves `razorpay.py`; the rest
+  of the backend depends on the abstractions only.
+- **Provider selection** — `PAYMENT_PROVIDER=mock|razorpay` (legacy alias:
+  `PAYMENT_MODE`). Mock is the default and requires **no credentials**;
+  tests and local dev run without any external payment config.
+  Selecting `razorpay` **fails fast** unless `RAZORPAY_KEY_ID`,
+  `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` are all set
+
+### Payment state machine
+
+`payment_attempts.status` (defined centrally in `service.py`):
+
+```
+CREATED ──▶ PENDING ──▶ AUTHORIZED ──▶ PAID ──▶ REFUNDED
+   │           │             │
+   └───────────┴─────────────┴──▶ FAILED ──▶ PENDING   (retry)
+                PENDING/CREATED/AUTHORIZED ──▶ CANCELLED   (terminal)
+```
+
+Terminal: `PAID` (→ `REFUNDED` only), `CANCELLED`, `REFUNDED`.
+`PAID → FAILED`, `PAID → PENDING`, `REFUNDED → PAID`, `CANCELLED → PAID`
+are rejected by `transition_attempt()` with `InvalidTransition`.
+The legacy `Booking.payment_status` (`PENDING/PAID/FAILED`) is preserved as
+a booking-level mirror so Phase 3 readers keep working.
+
+### Booking/payment lifecycle
+
+1. **Hold** (Phase 3, unchanged): short DB transaction locks seats, prices
+   server-side, creates `Booking(HELD)` + seats `HELD` for 10 minutes.
+2. **Create payment order** — `POST /api/payments/orders`: inside a short
+   transaction the booking is locked/validated, a
+   `PaymentAttempt(CREATED)` row is inserted with the **DB-stored amount**,
+   then the transaction commits. **Only after commit** does the service call
+   `provider.create_order()` — no DB locks are held across provider I/O.
+   Provider failure ⇒ attempt `FAILED(PROVIDER_ERROR)`, booking stays
+   `HELD` (502, retryable). Duplicate checkout requests **reuse the active
+   attempt** — no uncontrolled duplicates.
+3. **Settlement** — `POST /api/payments/webhook/{provider}`: signature
+   verified → normalized `WebhookEvent` → durable idempotency claim
+   (`payment_webhook_events`, unique `(provider, event_id)`) → one short
+   transaction that verifies **all** invariants (order maps to our attempt,
+   attempt belongs to the booking, amount/currency match our stored record,
+   booking still `HELD` within its hold window, seats still `HELD`) and
+   then atomically flips `attempt → PAID`, `booking → CONFIRMED`,
+   `seats → BOOKED`, clearing the hold expiry. Any invariant failure ⇒
+   nothing is confirmed; the failure is recorded on the attempt/event.
+4. **Expiry interaction** — if the hold expires before payment, cleanup
+   cancels the booking and frees seats; a later success webhook sees a
+   terminal booking, **never resurrects it**, and records
+   `FAILED(BOOKING_TERMINAL)` for reconciliation.
+5. **Retry** — `POST /api/payments/retry` creates a *new* attempt row for
+   the same booking (history immutable: `#1 FAILED → #2 PENDING → …`).
+
+  (`ProviderError` → clear 500, never a silent fallback).
+
+
+### Idempotency guarantees
+
+- `payment_webhook_events` enforces a DB unique constraint on
+  `(provider, event_id)` — redeliveries (double delivery, process restart,
+  concurrent workers) return `already_processed` without re-charging,
+  re-confirming or duplicating attempts. Never an in-memory set.
+- Payment-order creation reuses the active attempt keyed by the booking —
+  double-clicks, refreshes and mobile retries cannot create uncontrolled
+  duplicate attempts.
+- Client recovery polls `GET /api/payments/status/{reference}` (backend
+  truth) — the browser never trusts provider client callbacks alone, and
+  never marks a booking successful from a client-side callback.
+
+### Webhook security
+
+- Razorpay signatures use the **official scheme**: hex HMAC-SHA256 of the
+  raw request body keyed with `RAZORPAY_WEBHOOK_SECRET`
+  (`compute_webhook_signature`); checkout callback signatures use
+  HMAC-SHA256 of `order_id|payment_id` with `RAZORPAY_KEY_SECRET`.
+  Comparison is constant-time (`hmac.compare_digest`).
+- Signature failure → `401` before any parsing/persistence; unsigned,
+  forged or unparseable payloads are never processed. Webhook amounts,
+  statuses and provider ids are verified against our own PaymentAttempt
+  rows before anything is confirmed.
+- Secrets (`RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `JWT_SECRET`)
+  are read from the environment only, never logged, never returned to JS —
+  only the **public** key id may reach `checkout.key_id`.
+- Frontend submits only `booking_reference`; amount, currency, provider ids
+  and payment status are server-side only. No application path bypasses
+  the payment service/state machine.
+
+### Razorpay configuration (production)
+
+```bash
+APP_ENV=production
+PAYMENT_PROVIDER=razorpay
+RAZORPAY_KEY_ID=rzp_...          # public; safe to expose to checkout
+RAZORPAY_KEY_SECRET=...          # server-only — NEVER commit
+RAZORPAY_WEBHOOK_SECRET=...      # webhook HMAC secret — NEVER commit
+```
+
+Webhook URL: `POST /api/payments/webhook/razorpay` (raw body forwarded
+unchanged so signature verification matches).
+Phase 4 ships the adapter with deterministic, network-free order creation;
+swapping `_synthesized_order_id` for the official SDK call is the only
+Phase 5 change — the boundary and webhook verification stay identical.
+
+### Local development & testing
+
+- Mock mode needs nothing: `PAYMENT_PROVIDER=mock` (default; no Razorpay
+  credentials required, local startup unchanged).
+- Run the full suite (offline — no Razorpay network calls, mocked providers):
+
+```bash
+backend/.venv/Scripts/python -m pytest backend/tests -v
+backend/.venv/Scripts/python check_assets.py
+```
+
+> **Mock payment is for development/testing only. Real Razorpay credentials
+> must never be committed. Webhook signature verification is mandatory in
+> production.**
 
 ## Deferred findings (intentionally left for later phases)
 
@@ -162,4 +299,4 @@ Issues identified during the Phase 2 security review that belong to later phases
 - **Rate limiter is per-process** — in-memory counters do not coordinate across multiple workers/instances and reset on restart; the `RateLimiter` seam is designed for a Redis-backed replacement in the production infrastructure phase.
 - **No global request-body size cap** — individual Pydantic fields are bounded, but a reverse proxy should cap total body size in production.
 - **Proxy-aware client IP** — rate limits key on the direct connection address; wire trusted forwarded headers when a reverse proxy is introduced.
-- **Payment gateway, webhooks, admin/RBAC, review moderation, cancellation redesign, Redis, PostgreSQL tuning, CI/CD** — out of scope by design (later phases).
+- **Refunds UI, admin/RBAC, review moderation, cancellation redesign, Redis, PostgreSQL tuning, CI/CD** — out of scope by design (later phases). Live Razorpay SDK order creation, refunds execution and admin payment dashboards are Phase 5+; Phase 4 ships the provider boundary, webhook settlement and idempotency.

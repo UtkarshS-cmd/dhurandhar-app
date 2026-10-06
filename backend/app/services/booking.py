@@ -306,6 +306,42 @@ def _is_lock_contention(exc: Exception) -> bool:
     return False
 
 
+def _active_payment_provider() -> str:
+    try:
+        from ..config import settings as _settings
+        return ((_settings.payment_provider if hasattr(_settings, "payment_provider") else None)
+                or _settings.payment_mode or "mock").strip().lower()
+    except Exception:
+        return "mock"
+
+
+def _record_sync_attempt(db: Session, booking: Booking, *,
+                         result_status: str, provider_reference: str | None) -> None:
+    """Mirror a synchronous mock confirm into the PaymentAttempt ledger.
+
+    Keeps the Phase 4 attempt history complete without changing Phase 3
+    outcomes: exactly one PAID attempt for a successful mock confirm, one
+    FAILED attempt for a decline. Imported lazily to avoid a payments <->
+    booking import cycle (service.py imports from booking.py).
+    """
+    from ..models import PaymentAttempt as _Attempt, PaymentAttemptStatus as _AttemptStatus
+    from sqlalchemy import func as _func, select as _select
+    attempt_no = (db.scalar(_select(_func.max(_Attempt.attempt_no)).where(
+        _Attempt.booking_id == booking.id)) or 0) + 1
+    if result_status == PaymentStatus.PAID.value:
+        status = _AttemptStatus.PAID.value
+    elif result_status == PaymentStatus.FAILED.value:
+        status = _AttemptStatus.FAILED.value
+    else:
+        status = _AttemptStatus.PENDING.value
+    provider = _active_payment_provider()
+    db.add(_Attempt(
+        booking_id=booking.id, provider=provider,
+        provider_order_id=None, provider_payment_id=provider_reference,
+        amount=float(booking.total_amount), currency="INR",
+        status=status, attempt_no=attempt_no))
+
+
 def booking_transaction(db: Session, operation):
     """Run ``operation()`` as one atomic booking transaction.
 
@@ -637,7 +673,14 @@ def create_hold_for_user(db: Session, user: User, show_id: int, seat_ids: list[i
 
 
 def confirm_booking_reference(db: Session, reference: str, payment_method: str) -> Booking:
-    """Confirm a held booking if still valid and chargeable."""
+    """Confirm a held booking if still valid and chargeable.
+
+    Phase 3 synchronous mock path — behavior is frozen. Under ``mock`` the
+    in-transaction ``charge()`` is a deterministic local function (no I/O),
+    so atomicity holds exactly as Phase 3 verified. Under ``razorpay`` this
+    entry point refuses synchronous confirmation: callers must create a
+    payment order and complete via webhook verification instead.
+    """
 
     def _op() -> Booking | None:
         if not reference or not reference.startswith("DHR-"):
@@ -667,6 +710,14 @@ def confirm_booking_reference(db: Session, reference: str, payment_method: str) 
         if len(seat_rows) == 0 or any(ss.status != ShowSeatStatus.HELD.value for ss in seat_rows):
             raise BookingConflict("Selected seats are no longer held")
 
+        if _active_payment_provider() == "razorpay":
+            # Real providers settle asynchronously via webhooks; confirming
+            # inside this transaction would reintroduce the Phase 3 network-
+            # inside-transaction anti-pattern. Nothing is mutated.
+            raise PaymentUnavailable(
+                "Razorpay checkout requires a payment order; "
+                "use POST /api/payments/orders then the webhook to confirm")
+
         try:
             result = payment_service.PaymentGateway().charge(float(booking.total_amount), payment_method)
         except RuntimeError as exc:
@@ -683,9 +734,13 @@ def confirm_booking_reference(db: Session, reference: str, payment_method: str) 
             # COMMIT sentinel: persist FAILED, then the outer wrapper raises
             # the 402.
             transition_payment(booking, PaymentStatus.FAILED.value)
+            _record_sync_attempt(db, booking, result_status=PaymentStatus.FAILED.value,
+                                 provider_reference=result.provider_reference)
             return False
         # The booking must remain HELD if payment fails/raises before commit.
         transition_payment(booking, result.status)
+        _record_sync_attempt(db, booking, result_status=result.status,
+                             provider_reference=result.provider_reference)
         transition_booking(booking, BookingStatus.CONFIRMED.value, hold_expires_at=None)
         for ss in seat_rows:
             transition_seat(ss, ShowSeatStatus.BOOKED.value, hold_expires_at=None, booking_id=ss.booking_id)

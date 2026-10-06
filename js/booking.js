@@ -1,7 +1,7 @@
 
 import {
   fetchCities, fetchDates, fetchTheaters, fetchShows, fetchSeats,
-  createHold, confirmBooking
+  createHold, confirmBooking, createPaymentOrder, fetchPaymentStatus
 } from './api.js';
 
 const state = {
@@ -16,6 +16,7 @@ const state = {
   ticketCount: 2,
   category: 'Silver',
   hold: null,
+  paymentOrder: null,
   loading: false,
   lastFocused: null
 };
@@ -281,6 +282,10 @@ async function confirm(){
   if(button?.disabled)return;
   setButtonLoading(button,true,'Confirming…'); setStatus('Confirming booking with the cinema server…','loading');
   try{
+    // Phase 4: create (or reuse) the server-priced payment order first. The
+    // amount comes from the backend record — the browser never calculates or
+    // submits an authoritative amount, provider ids or payment status.
+    state.paymentOrder=await createPaymentOrder(reference);
     const result=await confirmBooking(reference,$('f-payment').value);
     $('bookingRef').textContent=result.booking_reference;
     const sub=document.querySelector('#mpanel5 .success-sub');
@@ -294,15 +299,18 @@ async function confirm(){
     if(error.status===undefined || error.status>=500){
       setStatus('Connection lost while confirming. Checking booking status…','loading');
       try{
-        const {fetchBooking}=await import('./api.js');
-        const current=await fetchBooking(reference);
-        if(current.status==='CONFIRMED'){
+        // Authoritative recovery: the payment/booking status endpoint reports
+        // backend-verified truth (booking + payment attempts) — a provider
+        // client callback alone is never trusted.
+        const status=await fetchPaymentStatus(reference);
+        if(status.booking_status==='CONFIRMED'){
+          const current=await (await import('./api.js')).fetchBooking(reference);
           $('bookingRef').textContent=current.booking_reference;
           const sub=document.querySelector('#mpanel5 .success-sub');
           sub.textContent=`Your seats ${current.seats.join(', ')} are confirmed. Booking total: ₹${Number(current.total_amount).toFixed(2)}.`;
           goStep(5); setStatus(''); return;
         }
-        setStatus(`Booking status: ${current.status}. ${error.message}`,'error');
+        setStatus(`Booking status: ${status.booking_status}, payment: ${status.payment_status}. ${error.message}`,'error');
       }catch(recoveryError){
         setStatus(`Could not confirm booking status (${error.message}). Your reference is ${reference} — use it to check status before retrying.`,'error');
         return;
@@ -327,7 +335,7 @@ function togglePassword(target,button){
 
 function reset(){
   state.step=1;state.cityId=null;state.theaterId=null;state.showId=null;state.date='';
-  state.selectedTime='';state.seats=[];state.selectedSeatIds.clear();state.hold=null;
+  state.selectedTime='';state.seats=[];state.selectedSeatIds.clear();state.hold=null;state.paymentOrder=null;
   $('booking-status')?.remove();
   ['f-name','f-email','f-phone','f-pwd','f-cpwd'].forEach(id=>{if($(id))$(id).value='';});
   $('f-city').value='';$('f-date').value='';$('f-tickets').value='2';$('f-category').value='Silver';

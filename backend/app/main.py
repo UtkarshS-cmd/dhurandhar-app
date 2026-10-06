@@ -15,7 +15,7 @@ from .config import settings, ROOT
 from .db import get_db
 from .models import (
     User, Movie, City, Theater, Screen, Seat, Show, ShowSeat,
-    Booking, BookingSeat, Review, ReviewLike, NewsletterSubscriber, ContactMessage,
+    Booking, BookingSeat, PaymentAttempt, Review, ReviewLike, NewsletterSubscriber, ContactMessage,
     ShowSeatStatus, BookingStatus, PaymentStatus
 )
 from .schemas import *
@@ -42,6 +42,8 @@ from .services.booking import (
     validate_show_and_seats as validate_show_and_seats_service,
 )
 from .services.payment import payment_gateway
+from .services.payments.base import ProviderError
+from .services.payments.service import get_payment_service
 
 app = FastAPI(title="Dhurandhar Cinema API", version="1.0.0")
 
@@ -263,6 +265,123 @@ def confirm_booking(reference: str, payload: BookingConfirmRequest, db: Session 
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except HTTPException:
         raise
+def _webhook_response(outcome: dict):
+    name = outcome.get("outcome")
+    if name == "confirmed":
+        return {"status": "ok", "booking_reference": outcome.get("booking_reference")}
+    if name in ("already_processed", "terminal_ignored"):
+        return {"status": "already_processed"}
+    if name == "failed_recorded":
+        return {"status": "ok", "recorded": "failed"}
+    return {"status": "ignored", "reason": outcome.get("reason", "ignored")}
+
+# -- Phase 4: provider-agnostic payment orders + webhooks -------------------
+@app.post("/api/payments/orders", dependencies=[Depends(rate_limit("booking_ref"))])
+def create_payment_order(payload: PaymentOrderRequest, db: Session = Depends(get_db)):
+    cleanup_expired_holds(db)
+    try:
+        service = get_payment_service()
+    except ProviderError as exc:
+        raise HTTPException(500, str(exc)) from exc
+    try:
+        _attempt, order = service.create_order_for_booking(db, payload.booking_reference)
+    except BookingEngineError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return {
+        "provider": order.provider, "provider_order_id": order.provider_order_id,
+        "amount": order.amount, "currency": order.currency,
+        "booking_reference": order.booking_reference, "checkout": order.checkout,
+    }
+
+
+@app.post("/api/payments/retry", dependencies=[Depends(rate_limit("booking_ref"))])
+def retry_payment_order(payload: PaymentOrderRequest, db: Session = Depends(get_db)):
+    cleanup_expired_holds(db)
+    try:
+        service = get_payment_service()
+    except ProviderError as exc:
+        raise HTTPException(500, str(exc)) from exc
+    try:
+        _attempt, order = service.retry_payment(db, payload.booking_reference)
+    except BookingEngineError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return {
+        "provider": order.provider, "provider_order_id": order.provider_order_id,
+        "amount": order.amount, "currency": order.currency,
+        "booking_reference": order.booking_reference, "checkout": order.checkout,
+    }
+
+
+@app.get("/api/payments/status/{reference}", dependencies=[Depends(rate_limit("booking_ref"))])
+def payment_status(reference: str, db: Session = Depends(get_db)):
+    cleanup_expired_holds(db)
+    if not is_valid_booking_reference(reference):
+        raise HTTPException(404, "Booking not found")
+    booking = db.scalar(select(Booking).where(Booking.booking_reference == reference))
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+    attempts = db.scalars(select(PaymentAttempt).where(
+        PaymentAttempt.booking_id == booking.id
+        ).order_by(PaymentAttempt.attempt_no)).all()
+    return {
+        "booking_reference": booking.booking_reference,
+        "booking_status": booking.status, "payment_status": booking.payment_status,
+        "total_amount": float(booking.total_amount), "currency": "INR",
+        "attempts": [
+            {"attempt_no": a.attempt_no, "provider": a.provider,
+             "provider_order_id": a.provider_order_id,
+             "provider_payment_id": a.provider_payment_id,
+             "amount": float(a.amount), "currency": a.currency,
+             "status": a.status} for a in attempts],
+    }
+
+
+@app.post("/api/payments/webhook/{provider}", include_in_schema=False)
+async def payment_webhook(provider: str, request: Request, db: Session = Depends(get_db)):
+    provider = (provider or "").strip().lower()
+    try:
+        service = get_payment_service()
+    except ProviderError as exc:
+        raise HTTPException(500, str(exc)) from exc
+    if provider != service.provider.name:
+        raise HTTPException(404, "Unknown payment provider")
+    raw_body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    if not service.provider.verify_webhook(raw_body=raw_body, headers=headers):
+        raise HTTPException(401, "Invalid webhook signature")
+    try:
+        event = service.provider.parse_webhook(raw_body=raw_body)
+    except Exception as exc:
+        raise HTTPException(400, f"Unparseable webhook body: {exc}") from exc
+    if event.provider != service.provider.name:
+        raise HTTPException(400, "Provider mismatch in webhook payload")
+    try:
+        outcome = service.process_webhook_event(db, event)
+    except BookingEngineError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return _webhook_response(outcome)
+
+
+@app.post("/api/payments/webhook", include_in_schema=False)
+async def payment_webhook_default(request: Request, db: Session = Depends(get_db)):
+    try:
+        service = get_payment_service()
+    except ProviderError as exc:
+        raise HTTPException(500, str(exc)) from exc
+    raw_body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    if not service.provider.verify_webhook(raw_body=raw_body, headers=headers):
+        raise HTTPException(401, "Invalid webhook signature")
+    try:
+        event = service.provider.parse_webhook(raw_body=raw_body)
+    except Exception as exc:
+        raise HTTPException(400, f"Unparseable webhook body: {exc}") from exc
+    try:
+        outcome = service.process_webhook_event(db, event)
+    except BookingEngineError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return _webhook_response(outcome)
+
 
 @app.post("/api/bookings", response_model=BookingOut, status_code=201,
           dependencies=[Depends(rate_limit("hold")), Depends(rate_limit("hold_identity", "identity"))])

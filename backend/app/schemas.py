@@ -98,6 +98,12 @@ class HoldRequest(BaseModel):
 class BookingConfirmRequest(BaseModel):
     payment_method: PaymentMethod
 
+
+class PaymentOrderRequest(BaseModel):
+    # No amount field by design: the amount always comes from the
+    # server-side booking record; client-submitted amounts are ignored.
+    booking_reference: str = Field(min_length=4, max_length=64)
+
 class BookingCreateRequest(BaseModel):
     user: UserCreate  # nested schema normalizes/validates the email
     show_id: int = Field(ge=1)
