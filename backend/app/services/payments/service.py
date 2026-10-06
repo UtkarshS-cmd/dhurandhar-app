@@ -1,6 +1,8 @@
 """PaymentService — the cinema backend's payment owner (Phase 4)."""
 from __future__ import annotations
 
+import time
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -231,37 +233,51 @@ class PaymentService:
     def process_webhook_event(self, db, event):
         if not event.event_id or not event.provider_order_id:
             return {"outcome": "ignored", "reason": "missing identifiers"}
-        def _claim():
-            row = PaymentWebhookEvent(
-                provider=event.provider, event_id=event.event_id,
-                event_type=event.event_type, status=WebhookEventStatus.RECEIVED.value)
-            db.add(row)
-            db.flush()
-            return row.id
-        try:
-            booking_transaction(db, _claim)
-        except IntegrityError:
-            db.rollback()
-            return {"outcome": "already_processed"}
-        try:
-            return booking_transaction(db, lambda: self._settle(db, event))
-        except PaymentUnavailable:
-            raise
-        except Exception as exc:
-            def _mark_failed():
-                row = db.scalar(select(PaymentWebhookEvent).where(
-                    PaymentWebhookEvent.provider == event.provider,
-                    PaymentWebhookEvent.event_id == event.event_id))
-                if row is not None and row.status == WebhookEventStatus.RECEIVED.value:
-                    row.status = WebhookEventStatus.FAILED.value
-                    row.processed_at = utcnow()
+        # Crash-safe idempotency: claim + settlement commit atomically.
+        # A row is only PROCESSED together with its settlement, so a crash
+        # before commit leaves either no row or a retryable row — never a
+        # committed RECEIVED that incorrectly reads as "already processed".
+        # IntegrityError here means a concurrent transaction won the insert
+        # race; retry in a fresh transaction to observe its committed state.
+        last_exc = None
+        for _retry in range(5):
             try:
-                booking_transaction(db, _mark_failed)
-            except Exception:
-                pass
-            raise PaymentUnavailable(str(exc)) from exc
+                return booking_transaction(db, lambda: self._settle_atomic(db, event))
+            except IntegrityError as exc:
+                last_exc = exc
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                time.sleep(0.01 * (_retry + 1))
+                continue
+            except PaymentUnavailable:
+                raise
+            except Exception as exc:
+                raise PaymentUnavailable(str(exc)) from exc
+        # Retries exhausted on insert races: observe committed state instead
+        # of poisoning the event. Only a durable PROCESSED counts.
+        try:
+            committed = db.scalar(select(PaymentWebhookEvent).where(
+                PaymentWebhookEvent.provider == event.provider,
+                PaymentWebhookEvent.event_id == event.event_id))
+        except Exception:
+            committed = None
+        if committed is not None and committed.status == WebhookEventStatus.PROCESSED.value:
+            return {"outcome": "already_processed"}
+        if last_exc is not None:
+            raise PaymentUnavailable(f"concurrent webhook delivery: {last_exc}") from last_exc
+        raise PaymentUnavailable("concurrent webhook delivery")  # pragma: no cover
 
-    def _settle(self, db, event):
+    def _settle_atomic(self, db, event):
+        """Single-transaction claim + validate + settle.
+
+        Lock order: PaymentAttempt -> webhook row -> Booking -> ShowSeats
+        (seats in deterministic id order via existing helpers). The attempt
+        row is the real settlement mutex: two different event_ids for the
+        same provider order serialize on it so only one can flip PENDING to
+        PAID. No external provider calls inside this transaction.
+        """
         attempt = db.scalar(select(PaymentAttempt).where(
             PaymentAttempt.provider == event.provider,
             PaymentAttempt.provider_order_id == event.provider_order_id
@@ -269,6 +285,33 @@ class PaymentService:
         webhook_row = db.scalar(select(PaymentWebhookEvent).where(
             PaymentWebhookEvent.provider == event.provider,
             PaymentWebhookEvent.event_id == event.event_id).with_for_update())
+        if webhook_row is None:
+            webhook_row = PaymentWebhookEvent(
+                provider=event.provider, event_id=event.event_id,
+                event_type=event.event_type, status=WebhookEventStatus.RECEIVED.value)
+            db.add(webhook_row)
+            db.flush()
+        elif webhook_row.status == WebhookEventStatus.PROCESSED.value:
+            return {"outcome": "already_processed"}
+        # RECEIVED / FAILED / IGNORED rows are retryable: fall through and
+        # reprocess safely inside this same transaction. The unique
+        # (provider, event_id) constraint is never weakened and the row is
+        # never deleted; PROCESSED is only written together with settlement.
+        return self._settle(db, event, webhook_row=webhook_row, attempt=attempt)
+
+    def _settle(self, db, event, webhook_row=None, attempt=None):
+        # Webhook row + attempt are already claimed + row-locked by
+        # _settle_atomic and passed in; only look them up when _settle is
+        # invoked directly.
+        if webhook_row is None:
+            webhook_row = db.scalar(select(PaymentWebhookEvent).where(
+                PaymentWebhookEvent.provider == event.provider,
+                PaymentWebhookEvent.event_id == event.event_id).with_for_update())
+        if attempt is None:
+            attempt = db.scalar(select(PaymentAttempt).where(
+                PaymentAttempt.provider == event.provider,
+                PaymentAttempt.provider_order_id == event.provider_order_id
+                ).with_for_update())
         if attempt is None:
             if webhook_row is not None:
                 webhook_row.status = WebhookEventStatus.IGNORED.value
