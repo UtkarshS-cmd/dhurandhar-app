@@ -1,10 +1,7 @@
-// Authentication feature: session lifecycle, auth modal, profile menu and
-// "My Bookings". Backend contract unchanged (POST /auth/register, /auth/login,
-// GET /me/bookings). The 401 hook makes expired JWTs clear local state once —
-// protected endpoints are never hammered with a dead token, and there are no
-// redirects (so no redirect loops are possible).
+// Authentication feature: session lifecycle, auth modal, account profile and
+// "My Bookings". The 401 hook makes expired JWTs clear local state once.
 
-import { login, register, fetchMyBookings } from '../api.js';
+import { login, register, fetchMe, updateMe, changePassword, fetchMyBookings } from '../api.js';
 import { onUnauthorized } from '../core/api-client.js';
 import { friendlyMessage } from '../core/errors.js';
 import { getSession, setSession, clearSession, onSessionChange } from '../core/state.js';
@@ -16,8 +13,12 @@ import { toast } from '../ui/notifications.js';
 
 let initDone = false;
 let bookingsRequestId = 0;
+let profileRequestId = 0;
+let profileReady = false;
+let profileOriginal = null;
 
 const authModal = () => $('auth-modal');
+const profileModal = () => $('profile-modal');
 const bookingsModal = () => $('my-bookings-modal');
 
 function setAuthMessage(id, message, type = '') {
@@ -57,6 +58,8 @@ export function openAuth() {
 
 function closeAuth() {
   closeModal(authModal());
+  $('al-pwd').value = '';
+  $('ar-pwd').value = '';
   setAuthMessage('al-err', '');
   setAuthMessage('ar-err', '');
   setAuthMessage('ar-ok', '');
@@ -132,6 +135,7 @@ function toggleProfile(btn) {
       row('pd-name', user.full_name),
       row('pd-email', user.email),
     ]),
+    el('button', { type: 'button', class: 'pd-item', 'data-action': 'open-profile', text: 'Profile & Password' }),
     el('button', { type: 'button', class: 'pd-item', 'data-action': 'open-my-bookings', text: 'My Bookings' }),
     el('div', { class: 'pd-sep' }),
     el('button', { type: 'button', class: 'pd-item danger', 'data-action': 'logout', text: 'Sign Out' }),
@@ -179,9 +183,147 @@ function closeMyBookings() {
 }
 
 function logout() {
+  closeProfile();
+  closeMyBookings();
   clearSession();
   $('profile-menu')?.remove();
   toast('You have been signed out.', 'info');
+}
+
+function clearPasswordFields() {
+  const current = $('profile-current-password');
+  const next = $('profile-new-password');
+  if (current) current.value = '';
+  if (next) next.value = '';
+}
+
+function setProfileMessage(id, message, type = '') {
+  const node = $(id);
+  if (!node) return;
+  node.textContent = message;
+  node.className = type === 'error' ? 'auth-err' : 'auth-ok';
+}
+
+function setProfileLoading(loading) {
+  profileReady = !loading && Boolean(profileOriginal);
+  const save = document.querySelector('[data-action="save-profile"]');
+  if (save) save.disabled = !profileReady;
+  const status = $('profile-loading');
+  if (status) status.textContent = loading ? 'Loading account details…' : '';
+}
+
+function populateProfile(user) {
+  $('profile-full-name').value = user.full_name || '';
+  $('profile-email').value = user.email || '';
+  $('profile-phone').value = user.phone || '';
+  profileOriginal = {
+    full_name: user.full_name || '',
+    phone: user.phone || '',
+  };
+}
+
+async function openProfile() {
+  if (!getSession().token || isModalOpen(profileModal())) return;
+  $('profile-menu')?.remove();
+  const session = getSession();
+  const requestId = ++profileRequestId;
+  setProfileMessage('profile-err', '');
+  setProfileMessage('profile-ok', '');
+  setProfileMessage('password-err', '');
+  setProfileMessage('password-ok', '');
+  setProfileLoading(true);
+  if (session.user) populateProfile(session.user);
+  openModal(profileModal(), { focus: $('profile-full-name') });
+
+  try {
+    const user = await fetchMe();
+    if (requestId !== profileRequestId || getSession().token !== session.token) return;
+    setSession(session.token, user);
+    populateProfile(user);
+  } catch (error) {
+    if (requestId !== profileRequestId) return;
+    setProfileMessage('profile-err', friendlyMessage(error), 'error');
+  } finally {
+    if (requestId === profileRequestId) setProfileLoading(false);
+  }
+}
+
+function closeProfile() {
+  profileRequestId++;
+  profileReady = false;
+  profileOriginal = null;
+  clearPasswordFields();
+  closeModal(profileModal());
+  $('nav-auth-btn')?.focus();
+}
+
+async function saveProfile() {
+  if (!profileReady || !profileOriginal) return;
+  const fullName = $('profile-full-name').value.trim();
+  const phoneInput = $('profile-phone').value.trim();
+  const phone = phoneInput.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+  if (fullName.length < 3 || fullName.length > 120) {
+    setProfileMessage('profile-err', 'Full name must be between 3 and 120 characters.', 'error');
+    return;
+  }
+  if (!/^[6-9]\d{9}$/.test(phone)) {
+    setProfileMessage('profile-err', 'Enter a valid 10-digit Indian mobile number.', 'error');
+    return;
+  }
+
+  const payload = {};
+  if (fullName !== profileOriginal.full_name) payload.full_name = fullName;
+  if (phone !== profileOriginal.phone) payload.phone = phone;
+  if (!Object.keys(payload).length) {
+    setProfileMessage('profile-err', '');
+    setProfileMessage('profile-ok', 'Your profile is already up to date.', 'ok');
+    return;
+  }
+
+  const button = document.querySelector('[data-action="save-profile"]');
+  await runExclusive(button, 'Saving…', async () => {
+    setProfileMessage('profile-err', '');
+    setProfileMessage('profile-ok', '');
+    try {
+      const updated = await updateMe(payload);
+      const token = getSession().token;
+      if (!token) return;
+      setSession(token, updated);
+      populateProfile(updated);
+      setProfileMessage('profile-ok', 'Profile updated successfully.', 'ok');
+      toast('Profile updated.', 'success');
+    } catch (error) {
+      setProfileMessage('profile-err', friendlyMessage(error), 'error');
+    }
+  });
+}
+
+async function submitPasswordChange() {
+  const currentPassword = $('profile-current-password').value;
+  const newPassword = $('profile-new-password').value;
+  if (!currentPassword || newPassword.length < 8 || newPassword.length > 128) {
+    setProfileMessage('password-err', 'Enter your current password and a new password of 8–128 characters.', 'error');
+    return;
+  }
+  if (currentPassword === newPassword) {
+    setProfileMessage('password-err', 'Your new password must differ from your current password.', 'error');
+    return;
+  }
+
+  const button = document.querySelector('[data-action="change-password"]');
+  await runExclusive(button, 'Changing…', async () => {
+    setProfileMessage('password-err', '');
+    setProfileMessage('password-ok', '');
+    try {
+      await changePassword({ current_password: currentPassword, new_password: newPassword });
+      clearPasswordFields();
+      closeProfile();
+      clearSession();
+      toast('Password changed. Sign in again with your new password.', 'success');
+    } catch (error) {
+      setProfileMessage('password-err', friendlyMessage(error), 'error');
+    }
+  });
 }
 
 export function initAuth() {
@@ -192,11 +334,13 @@ export function initAuth() {
   onSessionChange(updateNav);
   updateNav(getSession());
 
-  // Any authenticated request that comes back 401 = dead token: clear once,
-  // notify, close account UI. Subsequent requests attach no token at all.
+  // A bearer-auth challenge means the JWT is dead: clear once, notify and
+  // close account UI. A wrong current password is a distinct 401 without that
+  // challenge and must not sign out a still-valid session.
   onUnauthorized(() => {
     clearSession();
     toast('Your session has expired. Please sign in again.', 'error');
+    if (isModalOpen(profileModal())) closeProfile();
     if (isModalOpen(bookingsModal())) closeMyBookings();
   });
 
@@ -208,6 +352,10 @@ export function initAuth() {
     'auth-login': doLogin,
     'auth-register': doRegister,
     'toggle-profile': (event, target) => toggleProfile(target),
+    'open-profile': openProfile,
+    'close-profile': closeProfile,
+    'save-profile': saveProfile,
+    'change-password': submitPasswordChange,
     'open-my-bookings': openMyBookings,
     'close-my-bookings': closeMyBookings,
     'logout': logout,
@@ -228,6 +376,6 @@ export function initAuth() {
 
   // Backdrop click closes dialogs (the modal stack owns Escape/Tab).
   authModal()?.addEventListener('click', (event) => { if (event.target === authModal()) closeAuth(); });
+  profileModal()?.addEventListener('click', (event) => { if (event.target === profileModal()) closeProfile(); });
   bookingsModal()?.addEventListener('click', (event) => { if (event.target === bookingsModal()) closeMyBookings(); });
 }
-

@@ -146,9 +146,14 @@ export async function request(path, options = {}) {
 
   if (!response.ok) {
     const error = buildError(response.status, data, parseRetryAfter(response));
-    // Only a request that carried a credential can mean "session expired" —
-    // a 401 from /auth/login (no token attached) never triggers the hook.
-    if (response.status === 401 && finalHeaders.Authorization && unauthorizedHandler) {
+    // Only an explicit bearer challenge means the attached credential expired.
+    // Password-change failures also use 401 but do not invalidate the session.
+    if (
+      response.status === 401
+      && finalHeaders.Authorization
+      && response.headers.has('WWW-Authenticate')
+      && unauthorizedHandler
+    ) {
       unauthorizedHandler(error);
     }
     throw error;

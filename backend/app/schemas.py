@@ -126,7 +126,6 @@ class SeatOut(BaseModel):
 
 class HoldRequest(BaseModel):
     user: UserCreate | None = None
-    user_id: int | None = Field(default=None, ge=1)
     show_id: int = Field(ge=1)
     seat_ids: list[SeatId] = Field(min_length=1, max_length=6)
 

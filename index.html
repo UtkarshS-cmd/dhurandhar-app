@@ -645,26 +645,28 @@
 </div>
 
 <!-- PROFILE MODAL -->
-<div id="profile-modal">
+<div id="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-title" aria-describedby="profile-loading" tabindex="-1">
   <div class="profile-panel">
     <div class="bp-header">
-      <h3>PROFILE</h3>
-      <button type="button" data-action="close-profile" style="background:none;border:none;color:rgba(201,168,76,0.4);font-size:18px;cursor:pointer;">✕</button>
+      <h3 id="profile-title">ACCOUNT PROFILE</h3>
+      <button type="button" data-action="close-profile" aria-label="Close account profile" style="background:none;border:none;color:rgba(201,168,76,0.4);font-size:18px;cursor:pointer;">✕</button>
     </div>
     <div class="profile-body">
+      <div id="profile-loading" class="async-state" role="status" aria-live="polite"></div>
       <div class="profile-section">
         <h4>Personal Information</h4>
         <div class="profile-field">
           <label for="profile-full-name">Full Name</label>
-          <input id="profile-full-name" type="text" autocomplete="name">
+          <input id="profile-full-name" type="text" autocomplete="name" maxlength="120" required>
         </div>
         <div class="profile-field">
-          <label for="profile-email">Email</label>
-          <input id="profile-email" type="email" autocomplete="email" readonly>
+          <label for="profile-email">Email (read-only)</label>
+          <input id="profile-email" type="email" autocomplete="email" readonly aria-describedby="profile-email-note">
         </div>
+        <p id="profile-email-note" class="async-state">Email cannot be changed because this account has no email-verification workflow.</p>
         <div class="profile-field">
           <label for="profile-phone">Phone</label>
-          <input id="profile-phone" type="tel" autocomplete="tel">
+          <input id="profile-phone" type="tel" autocomplete="tel" maxlength="16" required>
         </div>
         <button class="auth-btn" data-action="save-profile">Save Changes</button>
         <div class="auth-err" id="profile-err" role="alert"></div>
@@ -692,10 +694,10 @@
 </div>
 
 <!-- MY BOOKINGS MODAL -->
-<div id="my-bookings-modal">
+<div id="my-bookings-modal" role="dialog" aria-modal="true" aria-labelledby="my-bookings-title" tabindex="-1">
   <div class="bookings-panel">
     <div class="bp-header">
-      <h3>MY BOOKINGS</h3>
+      <h3 id="my-bookings-title">MY BOOKINGS</h3>
       <button type="button" data-action="close-my-bookings" style="background:none;border:none;color:rgba(201,168,76,0.4);font-size:18px;cursor:pointer;">✕</button>
     </div>
     <div id="my-bookings-list" style="padding-bottom:24px;"></div>

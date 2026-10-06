@@ -5,6 +5,10 @@
 export const $ = (id) => document.getElementById(id);
 
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const BOOLEAN_ATTRIBUTES = new Set([
+  'autofocus', 'checked', 'disabled', 'hidden', 'multiple', 'open',
+  'readonly', 'required', 'selected',
+]);
 
 export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
@@ -30,6 +34,9 @@ export function el(tag, props = {}, children = []) {
     else if (key === 'text') node.textContent = value;
     else if (key === 'html') node.innerHTML = value; // only for pre-escaped strings
     else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2), value);
+    else if (typeof value === 'boolean' && BOOLEAN_ATTRIBUTES.has(key.toLowerCase())) {
+      if (value) node.setAttribute(key, '');
+    } else node.setAttribute(key, String(value));
   }
   for (const child of children.flat()) {
     if (child === null || child === undefined) continue;
