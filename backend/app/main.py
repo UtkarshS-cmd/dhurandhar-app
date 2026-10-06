@@ -267,8 +267,16 @@ def confirm_booking(reference: str, payload: BookingConfirmRequest, db: Session 
 @app.post("/api/bookings", response_model=BookingOut, status_code=201,
           dependencies=[Depends(rate_limit("hold")), Depends(rate_limit("hold_identity", "identity"))])
 def create_booking(payload: BookingCreateRequest, db: Session = Depends(get_db)):
-    hold = create_hold(payload, db)
-    return confirm_booking(hold.booking_reference, BookingConfirmRequest(payment_method=payload.payment_method), db)
+    cleanup_expired_holds(db)
+    try:
+        user = get_or_create_user(payload.user, db)
+        booking = create_hold_for_user(db, user, payload.show_id, payload.seat_ids, payload.payment_method)
+        confirmed = confirm_booking_reference(db, booking.booking_reference, payload.payment_method)
+        return booking_out(db, confirmed)
+    except BookingEngineError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except HTTPException:
+        raise
 
 @app.get("/api/bookings/{reference}", response_model=BookingOut,
          dependencies=[Depends(rate_limit("booking_ref"))])

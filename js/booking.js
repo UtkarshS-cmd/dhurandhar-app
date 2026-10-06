@@ -273,15 +273,45 @@ async function confirm(){
   if(!$('f-agree').checked){$('agree-err').style.display='block';return;}
   $('agree-err').style.display='none';
   if(!state.hold?.booking_reference)return;
+  const reference=state.hold.booking_reference;
   const button=document.querySelector('[data-action="confirm-booking"]');
+  // Double-submit guard: the backend treats a repeat confirm of a CONFIRMED
+  // booking as a deterministic 409, but the button stays disabled so a
+  // double-click can never fire two charges.
+  if(button?.disabled)return;
   setButtonLoading(button,true,'Confirming…'); setStatus('Confirming booking with the cinema server…','loading');
   try{
-    const result=await confirmBooking(state.hold.booking_reference,$('f-payment').value);
+    const result=await confirmBooking(reference,$('f-payment').value);
     $('bookingRef').textContent=result.booking_reference;
     const sub=document.querySelector('#mpanel5 .success-sub');
     sub.textContent=`Your seats ${result.seats.join(', ')} are confirmed. Booking total: ₹${Number(result.total_amount).toFixed(2)}.`;
     goStep(5); setStatus('');
   }catch(error){
+    // Never claim success on failure — and never discard the reference on a
+    // network error: the server may have committed while the response was
+    // lost. Reconcile via GET /api/bookings/{reference} (the authoritative
+    // recovery path) before sending the user back to seat selection.
+    if(error.status===undefined || error.status>=500){
+      setStatus('Connection lost while confirming. Checking booking status…','loading');
+      try{
+        const {fetchBooking}=await import('./api.js');
+        const current=await fetchBooking(reference);
+        if(current.status==='CONFIRMED'){
+          $('bookingRef').textContent=current.booking_reference;
+          const sub=document.querySelector('#mpanel5 .success-sub');
+          sub.textContent=`Your seats ${current.seats.join(', ')} are confirmed. Booking total: ₹${Number(current.total_amount).toFixed(2)}.`;
+          goStep(5); setStatus(''); return;
+        }
+        setStatus(`Booking status: ${current.status}. ${error.message}`,'error');
+      }catch(recoveryError){
+        setStatus(`Could not confirm booking status (${error.message}). Your reference is ${reference} — use it to check status before retrying.`,'error');
+        return;
+      }finally{setButtonLoading(button,false);}
+      state.hold=null;
+      goStep(3);
+      await loadSeats();
+      return;
+    }
     setStatus(error.message,'error');
     state.hold=null;
     goStep(3);

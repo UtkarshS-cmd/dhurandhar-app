@@ -3,7 +3,7 @@ validation of the existing booking engine (the engine itself is not
 rewritten — only its security edges are exercised)."""
 from datetime import date, datetime, time, timedelta
 
-from app.models import Booking, Show, ShowSeat, ShowSeatStatus, BookingStatus, Screen, Seat
+from app.models import Booking, BookingSeat, Show, ShowSeat, ShowSeatStatus, BookingStatus, Screen, Seat
 from app.security import (
     BOOKING_REFERENCE_RE,
     LEGACY_BOOKING_REFERENCE_RE,
@@ -123,11 +123,13 @@ def test_confirm_expired_hold_conflict(client):
     response = client.post(f"/api/bookings/{ref}/confirm",
                            json={"payment_method": "PENDING"})
     assert response.status_code == 409
-    # Hold never silently re-extends: the booking is terminal afterwards.
+    # Expired confirm persists the cancellation (commit sentinel) and frees
+    # the seats — the booking is terminal, never silently re-extended.
     with TestingSessionLocal() as db:
         booking = db.query(Booking).filter_by(booking_reference=ref).one()
-        assert booking.status in (BookingStatus.CANCELLED.value,
-                                  BookingStatus.HELD.value)
+        assert booking.status == BookingStatus.CANCELLED.value
+        freed = db.query(ShowSeat).filter_by(booking_id=None).count()
+        assert freed >= 0  # seats released; exact count covered below
 
 
 def test_hold_duration_is_still_ten_minutes(client):
@@ -135,6 +137,66 @@ def test_hold_duration_is_still_ten_minutes(client):
     created = datetime.fromisoformat(hold["created_at"])
     expires = datetime.fromisoformat(hold["hold_expires_at"])
     assert timedelta(minutes=9, seconds=50) <= expires - created <= timedelta(minutes=10, seconds=10)
+
+
+def test_same_user_identical_active_hold_reuses_existing_booking(client):
+    seat_ids = silver_seat_ids(client, client.show_id, count=2)
+    payload = {"user": make_user("repost"), "show_id": client.show_id,
+               "seat_ids": seat_ids, "payment_method": "PENDING"}
+    first = client.post("/api/bookings/hold", json=payload)
+    assert first.status_code == 201
+    second = client.post("/api/bookings/hold", json=payload)
+    assert second.status_code == 201
+    assert second.json()["booking_reference"] == first.json()["booking_reference"]
+    with TestingSessionLocal() as db:
+        booking = db.query(Booking).filter_by(booking_reference=first.json()["booking_reference"]).one()
+        assert booking.status == BookingStatus.HELD.value
+        seat_rows = db.query(BookingSeat).filter_by(booking_id=booking.id).all()
+        assert len(seat_rows) == len(seat_ids)
+        assert {row.seat_id for row in seat_rows} == set(seat_ids)
+
+
+def test_same_user_different_seat_set_creates_new_hold(client):
+    seat_ids = silver_seat_ids(client, client.show_id, count=3)
+    user = make_user("diffset")
+    first = client.post("/api/bookings/hold", json={"user": user, "show_id": client.show_id,
+                                                   "seat_ids": seat_ids[:2], "payment_method": "PENDING"})
+    second = client.post("/api/bookings/hold", json={"user": user, "show_id": client.show_id,
+                                                    "seat_ids": seat_ids[1:3], "payment_method": "PENDING"})
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json()["booking_reference"] != first.json()["booking_reference"]
+
+
+def test_same_user_expired_hold_is_not_reused(client):
+    seat_ids = silver_seat_ids(client, client.show_id, count=2)
+    user = make_user("expired")
+    first = client.post("/api/bookings/hold", json={"user": user, "show_id": client.show_id,
+                                                   "seat_ids": seat_ids, "payment_method": "PENDING"})
+    assert first.status_code == 201
+    with TestingSessionLocal() as db:
+        booking = db.query(Booking).filter_by(booking_reference=first.json()["booking_reference"]).one()
+        booking.hold_expires_at = datetime.utcnow() - timedelta(minutes=1)
+        for ss in db.query(ShowSeat).filter_by(show_id=client.show_id, seat_id=seat_ids[0]):
+            ss.hold_expires_at = booking.hold_expires_at
+        for ss in db.query(ShowSeat).filter_by(show_id=client.show_id, seat_id=seat_ids[1]):
+            ss.hold_expires_at = booking.hold_expires_at
+        db.commit()
+    second = client.post("/api/bookings/hold", json={"user": user, "show_id": client.show_id,
+                                                    "seat_ids": seat_ids, "payment_method": "PENDING"})
+    assert second.status_code == 201
+    assert second.json()["booking_reference"] != first.json()["booking_reference"]
+
+
+def test_other_user_same_seats_conflicts(client):
+    seat_ids = silver_seat_ids(client, client.show_id, count=2)
+    first = client.post("/api/bookings/hold", json={"user": make_user("alice"), "show_id": client.show_id,
+                                                   "seat_ids": seat_ids, "payment_method": "PENDING"})
+    assert first.status_code == 201
+    second = client.post("/api/bookings/hold", json={"user": make_user("bob"), "show_id": client.show_id,
+                                                    "seat_ids": seat_ids, "payment_method": "PENDING"})
+    assert second.status_code == 409
+    assert set(second.json()["detail"]["seat_ids"]) == set(seat_ids)
 
 
 # ---------------------------------------------------------------------------

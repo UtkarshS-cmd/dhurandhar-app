@@ -47,6 +47,7 @@ from app.models import (  # noqa: E402
     Theater,
 )
 from app.ratelimit import limiter  # noqa: E402
+from app.services.booking import reset_clock  # noqa: E402
 
 engine = create_engine(
     os.environ["DATABASE_URL"],
@@ -54,20 +55,22 @@ engine = create_engine(
     future=True,
 )
 TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
+Base.metadata.create_all(bind=engine)
 
 
 def seed_minimal_show(db):
     """One city/theater/screen/show with 80 seats: 20 Gold / 30 Silver / 30 Bronze."""
-    movie = Movie(title="Dhurandhar Test", metadata_json="{}")
+    suffix = uuid.uuid4().hex[:8]
+    movie = Movie(title=f"Dhurandhar Test {suffix}", metadata_json="{}")
     db.add(movie)
     db.flush()
-    city = City(name="Test City")
+    city = City(name=f"Test City {suffix}")
     db.add(city)
     db.flush()
-    theater = Theater(city_id=city.id, name="Test Theater", address="Test Address")
+    theater = Theater(city_id=city.id, name=f"Test Theater {suffix}", address=f"Test Address {suffix}")
     db.add(theater)
     db.flush()
-    screen = Screen(theater_id=theater.id, name="Screen 1")
+    screen = Screen(theater_id=theater.id, name=f"Screen {suffix}")
     db.add(screen)
     db.flush()
     seat_rows = []
@@ -116,6 +119,16 @@ def silver_seat_ids(client, show_id, count=2):
     selected = [s for s in seats if s["status"] == "AVAILABLE" and s["category"] == "Silver"][:count]
     assert len(selected) == count
     return [s["id"] for s in selected]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_booking_clock():
+    """A test that injects a mock clock must never leak it into others."""
+    reset_clock()
+    try:
+        yield
+    finally:
+        reset_clock()
 
 
 @pytest.fixture()

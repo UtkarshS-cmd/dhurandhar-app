@@ -315,6 +315,12 @@ def booking_transaction(db: Session, operation):
       simulated crashes can never leave partial state,
     * bounded retry only for transient lock contention.
 
+    Every engine entry point owns its transaction boundary: the API layer
+    never commits booking writes itself, so ``db.commit()`` here is what
+    persists holds/confirmations. Engine calls must NOT be nested on one
+    session (an inner commit would end the outer transaction); tests cover
+    rollback by failing *inside* a single transaction instead.
+
     Returns whatever ``operation`` returns.
     """
     for attempt in range(1, _MAX_TRANSACTION_ATTEMPTS + 1):
@@ -324,10 +330,16 @@ def booking_transaction(db: Session, operation):
             db.commit()
             return result
         except BookingEngineError:
-            db.rollback()
+            try:
+                db.rollback()
+            except Exception:
+                pass
             raise
         except Exception as exc:
-            db.rollback()
+            try:
+                db.rollback()
+            except Exception:
+                pass
             if attempt >= _MAX_TRANSACTION_ATTEMPTS or not _is_lock_contention(exc):
                 raise
             time.sleep(_RETRY_BACKOFF_SECONDS * attempt)
@@ -478,6 +490,26 @@ def validate_show_and_seats(show_id: int, seat_ids: list[int], db: Session):
     return show, rows
 
 
+def _find_active_hold_for_same_user_and_seats(db: Session, user_id: int, show_id: int, seat_ids: list[int]) -> Booking | None:
+    """Return the existing active hold for the same user + same exact seat set."""
+    seat_set = frozenset(seat_ids)
+    for booking in db.scalars(
+        select(Booking)
+        .where(
+            Booking.user_id == user_id,
+            Booking.show_id == show_id,
+            Booking.status == BookingStatus.HELD.value,
+            Booking.hold_expires_at.isnot(None),
+            Booking.hold_expires_at > utcnow(),
+        )
+        .order_by(Booking.id)
+    ).all():
+        existing_seats = {row.seat_id for row in booking.booking_seats}
+        if existing_seats == seat_set:
+            return booking
+    return None
+
+
 def create_hold_for_user(db: Session, user: User, show_id: int, seat_ids: list[int], payment_method: str) -> Booking:
     """Create a booking hold atomically and return the created booking row."""
 
@@ -485,15 +517,30 @@ def create_hold_for_user(db: Session, user: User, show_id: int, seat_ids: list[i
         show, rows = validate_show_and_seats(show_id, seat_ids, db)
         lock_rows = db.scalars(locked_seat_statement(show.id, seat_ids)).all()
         now = utcnow()
+
+        same_booking = _find_active_hold_for_same_user_and_seats(db, user.id, show.id, seat_ids)
+        if same_booking is not None:
+            return same_booking
+
         conflicts: list[int] = []
         for ss in lock_rows:
             if ss.status == ShowSeatStatus.BOOKED.value:
                 conflicts.append(ss.seat_id)
-            elif (
+                continue
+            if (
                 ss.status == ShowSeatStatus.HELD.value
                 and ss.hold_expires_at is not None
                 and ss.hold_expires_at > now
             ):
+                owner = db.get(Booking, ss.booking_id) if ss.booking_id is not None else None
+                if owner is not None and owner.user_id == user.id and owner.show_id == show.id:
+                    if {row.seat_id for row in owner.booking_seats} == frozenset(seat_ids):
+                        return owner
+                    # Same user may hold another set of seats concurrently; only
+                    # a different user's active hold is a conflict for this
+                    # request. This allows a new hold to be created for a
+                    # different seat set belonging to the same account.
+                    continue
                 conflicts.append(ss.seat_id)
 
         if conflicts:
@@ -540,7 +587,7 @@ def create_hold_for_user(db: Session, user: User, show_id: int, seat_ids: list[i
 def confirm_booking_reference(db: Session, reference: str, payment_method: str) -> Booking:
     """Confirm a held booking if still valid and chargeable."""
 
-    def _op() -> Booking:
+    def _op() -> Booking | None:
         if not reference or not reference.startswith("DHR-"):
             raise BookingNotFound("Booking hold not found")
         booking = _lock_booking(db, reference)
@@ -549,8 +596,20 @@ def confirm_booking_reference(db: Session, reference: str, payment_method: str) 
         if booking.status != BookingStatus.HELD.value:
             raise BookingConflict("Booking is no longer available for confirmation")
         if not booking.hold_expires_at or booking.hold_expires_at < utcnow():
+            # Expired: cancel the booking AND release its seats here — *before*
+            # raising — and return a COMMIT sentinel so the transaction
+            # persists the cancellation instead of rolling it back. The API
+            # layer re-raises the 409 from the sentinel.
             transition_booking(booking, BookingStatus.CANCELLED.value)
-            raise BookingExpired("Seat hold expired; please choose seats again")
+            for ss in _lock_booking_seats(db, booking.id):
+                if ss.status == ShowSeatStatus.HELD.value:
+                    transition_seat(
+                        ss,
+                        ShowSeatStatus.AVAILABLE.value,
+                        hold_expires_at=None,
+                        booking_id=None,
+                    )
+            return None
 
         seat_rows = _lock_booking_seats(db, booking.id)
         if len(seat_rows) == 0 or any(ss.status != ShowSeatStatus.HELD.value for ss in seat_rows):
@@ -559,16 +618,33 @@ def confirm_booking_reference(db: Session, reference: str, payment_method: str) 
         try:
             result = payment_service.PaymentGateway().charge(float(booking.total_amount), payment_method)
         except RuntimeError as exc:
+            # Unexpected gateway crash: nothing is mutated, the transaction
+            # rolls back and the hold stays HELD (retryable). Mapped to 502
+            # (not a raw 500) so callers can distinguish gateway outage.
             raise PaymentUnavailable(str(exc)) from exc
 
         booking.payment_method = payment_method
+        if result.status == PaymentStatus.FAILED.value:
+            # Explicit decline: PENDING -> FAILED is committed (retryable via
+            # FAILED -> PENDING/PAID) but the booking is NEVER confirmed —
+            # seats stay HELD under the original expiry. ``False`` is the
+            # COMMIT sentinel: persist FAILED, then the outer wrapper raises
+            # the 402.
+            transition_payment(booking, PaymentStatus.FAILED.value)
+            return False
+        # The booking must remain HELD if payment fails/raises before commit.
         transition_payment(booking, result.status)
         transition_booking(booking, BookingStatus.CONFIRMED.value, hold_expires_at=None)
         for ss in seat_rows:
             transition_seat(ss, ShowSeatStatus.BOOKED.value, hold_expires_at=None, booking_id=ss.booking_id)
         return booking
 
-    return booking_transaction(db, _op)
+    outcome = booking_transaction(db, _op)
+    if outcome is None:
+        raise BookingExpired("Seat hold expired; please choose seats again")
+    if outcome is False:
+        raise PaymentFailed("Payment declined; hold retained — please retry payment")
+    return outcome
 
 
 

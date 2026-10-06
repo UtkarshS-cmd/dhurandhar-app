@@ -82,6 +82,47 @@ backend/.venv/Scripts/python -m pytest backend/tests -v   # Windows
 
 The suite covers the Phase 1 baseline plus Phase 2 security tests: JWT/auth edge cases, configuration policy, security headers, CORS, rate limiting, booking-reference strength and authorization boundaries.
 
+## Phase 3 — booking engine (transactional correctness)
+
+`backend/app/services/booking.py` is the single authority for booking state:
+
+- **State machine** (centralized `transition_seat` / `transition_booking` /
+  `transition_payment`; illegal moves raise `InvalidTransition`):
+  `ShowSeat: AVAILABLE -> HELD -> BOOKED`, `HELD -> AVAILABLE` on expiry only;
+  `Booking: HELD -> CONFIRMED | CANCELLED` (both terminal — no silent
+  backward moves); `Payment: PENDING -> PAID | FAILED`, `FAILED` retryable.
+  No other module assigns booking/seat/payment status.
+- **Atomic transactions** (`booking_transaction`): write-intent first (SQLite
+  single-writer reservation before any availability check), commit on success,
+  full rollback on any exception, bounded retry on lock contention only.
+- **Concurrency**: `SELECT ... FOR UPDATE` inside the mutating transaction on
+  PostgreSQL; deterministic `ORDER BY show_seats.id` lock acquisition (no
+  deadlock for reversed seat order); whole-request failure on any conflict
+  (no partial holds); duplicate seat ids rejected before any write (422).
+- **Expiry (10 min TTL)**: `HELD -> AVAILABLE` + `HELD -> CANCELLED`
+  atomically via request-triggered `cleanup_expired_holds` (transactionally
+  safe, never touches `CONFIRMED`/`BOOKED`); expired confirms cancel-and-free
+  seats then return 409 — an expired hold can never become `CONFIRMED`, even
+  when cleanup and confirm race; freed seats are re-holdable; the DB (never
+  process memory) is authoritative across restarts.
+- **Idempotency**: identical re-hold by the same user returns the existing
+  booking; repeat confirm of a `CONFIRMED` booking is a deterministic 409
+  (frontend also disables the button + reconciles lost responses via
+  `GET /api/bookings/{reference}`).
+- **Payment boundary** (mock only): gateway crash rolls back, hold stays
+  `HELD`/`PENDING` (502); explicit decline persists `FAILED` without
+  confirming (402, seats stay `HELD`); seats become `BOOKED` only on success.
+  No Razorpay/Stripe/webhooks — the `PaymentGateway.charge()` seam is the
+  Phase 4 insertion point.
+- **DB constraints** (no migration needed — all present in the initial
+  schema): `users.email`, `bookings.booking_reference`, `uq_show_seat`,
+  `uq_booking_seat`, `uq_screen_showtime` are enforced by the database, not
+  just Python.
+- **SQLite vs PostgreSQL**: SQLite serializes writers via the write-intent
+  lock (concurrency tests use real threads + barriers); PostgreSQL uses real
+  row locks. Actual PostgreSQL concurrency verification is deferred until a
+  PostgreSQL environment is available — no results are faked.
+
 ## Asset validation
 
 ```bash
