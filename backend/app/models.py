@@ -63,6 +63,7 @@ class User(Base):
     token_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     bookings = relationship("Booking", back_populates="user")
+    reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
 
 class Movie(Base):
     __tablename__ = "movies"
@@ -70,6 +71,7 @@ class Movie(Base):
     title: Mapped[str] = mapped_column(String(200), unique=True)
     metadata_json: Mapped[str] = mapped_column(Text, default="{}")
     shows = relationship("Show", back_populates="movie")
+    reviews = relationship("Review", back_populates="movie", cascade="all, delete-orphan")
 
 class City(Base):
     __tablename__ = "cities"
@@ -215,13 +217,20 @@ class PaymentWebhookEvent(Base):
 class Review(Base):
     __tablename__ = "reviews"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    movie_id: Mapped[int] = mapped_column(ForeignKey("movies.id", ondelete="CASCADE"), index=True)
     rating: Mapped[int] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String(160))
     body: Mapped[str] = mapped_column(Text)
     spoiler: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    user = relationship("User")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user = relationship("User", back_populates="reviews")
+    movie = relationship("Movie", back_populates="reviews")
+    __table_args__ = (
+        UniqueConstraint("user_id", "movie_id", name="uq_review_user_movie"),
+        Index("ix_reviews_movie_created_at", "movie_id", "created_at"),
+    )
 
 class ReviewLike(Base):
     __tablename__ = "review_likes"

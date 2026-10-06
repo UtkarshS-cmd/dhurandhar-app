@@ -156,6 +156,8 @@ class BookingOut(BaseModel):
     hold_expires_at: datetime | None = None
 
 class ReviewCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    movie_id: int | None = Field(default=None, ge=1)
     rating: int = Field(ge=1, le=10)
     title: str = Field(min_length=2, max_length=160)
     body: str = Field(min_length=2, max_length=3000)
@@ -164,7 +166,33 @@ class ReviewCreate(BaseModel):
     @field_validator("title", "body", mode="before")
     @classmethod
     def strip_text(cls, value: str) -> str:
-        return _strip(value)
+        text = _strip(value)
+        if not text:
+            raise ValueError("Value cannot be empty")
+        return text
+
+
+class ReviewUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    rating: int | None = Field(default=None, ge=1, le=10)
+    title: str | None = Field(default=None, min_length=2, max_length=160)
+    body: str | None = Field(default=None, min_length=2, max_length=3000)
+    spoiler: bool | None = None
+
+    @field_validator("title", "body", mode="before")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        text = _strip(value)
+        if not text:
+            raise ValueError("Value cannot be empty")
+        return text
+
+    @model_validator(mode="after")
+    def require_content(self):
+        if all(getattr(self, field) is None for field in ("rating", "title", "body", "spoiler")):
+            raise ValueError("Provide at least one field to update")
+        return self
+
 
 class NewsletterCreate(_NormalizedEmail):
     name: str = Field(min_length=2, max_length=120)

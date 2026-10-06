@@ -50,6 +50,10 @@ RATE_LIMITS: dict[str, RateLimit] = {
     "hold_identity": RateLimit(max_requests=6, window_seconds=600),
     # Per IP: lookup + confirm of booking references (anti-enumeration).
     "booking_ref": RateLimit(max_requests=30, window_seconds=60),
+    # Per IP: review creation/update/delete is a public abuse surface.
+    "review_create": RateLimit(max_requests=15, window_seconds=600),
+    "review_update_delete": RateLimit(max_requests=20, window_seconds=600),
+    "review_like": RateLimit(max_requests=30, window_seconds=60),
     # Per IP: abuse protection for public form endpoints.
     "newsletter": RateLimit(max_requests=5, window_seconds=3600),
     "contact": RateLimit(max_requests=5, window_seconds=3600),

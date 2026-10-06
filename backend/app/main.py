@@ -2,8 +2,9 @@
 from datetime import date, datetime, timedelta, time
 from decimal import Decimal
 from pathlib import Path
+from typing import Literal
 
-from fastapi import FastAPI, Depends, HTTPException, status, Header, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Header, Request, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
@@ -142,6 +143,34 @@ def current_user(db: Session = Depends(get_db), authorization: str | None = Head
     except (TypeError, ValueError):
         raise HTTPException(401, "Invalid or expired session", headers={"WWW-Authenticate": "Bearer"})
     return user
+
+
+def optional_current_user(db: Session = Depends(get_db), authorization: str | None = Header(default=None)) -> User | None:
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    try:
+        payload = decode_token_payload(token.strip())
+        uid = int(payload["sub"])
+    except AuthenticationError:
+        return None
+    user = db.get(User, uid)
+    if not user or not user.is_active:
+        return None
+    try:
+        token_version = payload.get("ver")
+        if token_version is None:
+            if user.token_version != 1:
+                return None
+        else:
+            if int(token_version) != user.token_version:
+                return None
+    except (TypeError, ValueError):
+        return None
+    return user
+
 
 @app.get("/api/health")
 def health():
@@ -457,33 +486,191 @@ def my_bookings(db: Session=Depends(get_db), user: User=Depends(current_user)):
     rows=db.scalars(select(Booking).where(Booking.user_id==user.id).order_by(Booking.created_at.desc())).all()
     return [booking_out(db,b) for b in rows]
 
-@app.get("/api/reviews")
-def reviews(db: Session=Depends(get_db)):
-    rows=db.execute(select(Review,User).join(User,Review.user_id==User.id).order_by(Review.created_at.desc()).limit(30)).all()
-    like_counts=dict(db.execute(select(ReviewLike.review_id,func.count()).group_by(ReviewLike.review_id)).all())
-    return [{"id":r.id,"name":u.full_name,"rating":r.rating,"title":r.title,"body":r.body,"spoiler":r.spoiler,
-             "likes":like_counts.get(r.id,0),"created_at":r.created_at.isoformat()} for r,u in rows]
+VALID_REVIEW_SORTS = {"newest", "oldest", "highest", "lowest", "most_liked"}
 
-@app.post("/api/reviews/{review_id}/like")
-def like_review(review_id: int, db: Session=Depends(get_db), user: User=Depends(current_user)):
-    review=db.get(Review, review_id)
+
+def _review_eligibility_for_user(db: Session, user: User, movie_id: int) -> None:
+    if not movie_id:
+        raise HTTPException(422, "Movie is required")
+    movie = db.get(Movie, movie_id)
+    if not movie:
+        raise HTTPException(404, "Movie not found")
+    booking = db.scalar(
+        select(Booking)
+        .where(
+            Booking.user_id == user.id,
+            Booking.status == BookingStatus.CONFIRMED.value,
+            Booking.show_id.in_(
+                select(Show.id).where(Show.movie_id == movie_id)
+            ),
+        )
+        .order_by(Booking.created_at.desc())
+    )
+    if not booking:
+        raise HTTPException(403, "Only confirmed ticket holders can review this movie")
+
+
+def _review_list_query(db: Session, sort: str, page: int, limit: int):
+    stmt = (
+        select(Review, User, func.coalesce(func.count(ReviewLike.id), 0).label("like_count"))
+        .join(User, Review.user_id == User.id)
+        .outerjoin(ReviewLike, ReviewLike.review_id == Review.id)
+        .group_by(Review.id, User.id)
+    )
+    if sort == "newest":
+        stmt = stmt.order_by(Review.created_at.desc(), Review.id.desc())
+    elif sort == "oldest":
+        stmt = stmt.order_by(Review.created_at.asc(), Review.id.asc())
+    elif sort == "highest":
+        stmt = stmt.order_by(Review.rating.desc(), Review.created_at.desc())
+    elif sort == "lowest":
+        stmt = stmt.order_by(Review.rating.asc(), Review.created_at.desc())
+    elif sort == "most_liked":
+        stmt = stmt.order_by(func.coalesce(func.count(ReviewLike.id), 0).desc(), Review.created_at.desc())
+    else:
+        raise HTTPException(422, "Invalid sort")
+    return stmt.offset((page - 1) * limit).limit(limit)
+
+
+@app.get("/api/reviews")
+def reviews(
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=20),
+    sort: str = Query("newest"),
+    user: User | None = Depends(optional_current_user),
+):
+    if sort not in VALID_REVIEW_SORTS:
+        raise HTTPException(422, "Invalid sort")
+    total = db.scalar(select(func.count()).select_from(Review))
+    stmt = (
+        select(Review, User, func.coalesce(func.count(ReviewLike.id), 0).label("like_count"))
+        .join(User, Review.user_id == User.id)
+        .outerjoin(ReviewLike, ReviewLike.review_id == Review.id)
+        .group_by(Review.id, User.id)
+    )
+    if sort == "newest":
+        stmt = stmt.order_by(Review.created_at.desc(), Review.id.desc())
+    elif sort == "oldest":
+        stmt = stmt.order_by(Review.created_at.asc(), Review.id.asc())
+    elif sort == "highest":
+        stmt = stmt.order_by(Review.rating.desc(), Review.created_at.desc())
+    elif sort == "lowest":
+        stmt = stmt.order_by(Review.rating.asc(), Review.created_at.desc())
+    elif sort == "most_liked":
+        stmt = stmt.order_by(func.coalesce(func.count(ReviewLike.id), 0).desc(), Review.created_at.desc())
+    rows = db.execute(stmt.offset((page - 1) * limit).limit(limit)).all()
+    liked_review_ids = set()
+    if user is not None:
+        liked_review_ids = set(
+            db.scalars(
+                select(ReviewLike.review_id).where(ReviewLike.user_id == user.id, ReviewLike.review_id.in_([r.id for r, _, _ in rows]))
+            ).all()
+        )
+    items = []
+    for review, reviewer, like_count in rows:
+        items.append({
+            "id": review.id,
+            "name": reviewer.full_name,
+            "rating": review.rating,
+            "title": review.title,
+            "body": review.body,
+            "spoiler": review.spoiler,
+            "likes": int(like_count),
+            "liked": user is not None and review.id in liked_review_ids,
+            "created_at": review.created_at.isoformat(),
+            "updated_at": review.updated_at.isoformat() if review.updated_at else None,
+        })
+    return {
+        "items": items,
+        "page": page,
+        "limit": limit,
+        "total": total or 0,
+        "has_more": total > page * limit,
+        "average_rating": round((db.scalar(select(func.avg(Review.rating))) or 0), 2) if total else 0.0,
+        "total_reviews": total or 0,
+    }
+
+
+@app.post("/api/reviews/{review_id}/like", dependencies=[Depends(rate_limit("review_like"))])
+def like_review(review_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    review = db.get(Review, review_id)
     if not review:
         raise HTTPException(404, "Review not found")
-    existing=db.scalar(select(ReviewLike).where(
-        ReviewLike.review_id == review_id, ReviewLike.user_id == user.id
-    ))
+    existing = db.scalar(select(ReviewLike).where(ReviewLike.review_id == review_id, ReviewLike.user_id == user.id))
     if existing:
-        db.delete(existing); liked=False
+        db.delete(existing)
+        liked = False
     else:
-        db.add(ReviewLike(review_id=review_id, user_id=user.id)); liked=True
+        try:
+            db.add(ReviewLike(review_id=review_id, user_id=user.id))
+            db.flush()
+            liked = True
+        except Exception:
+            db.rollback()
+            existing = db.scalar(select(ReviewLike).where(ReviewLike.review_id == review_id, ReviewLike.user_id == user.id))
+            liked = bool(existing is not None)
     db.commit()
-    count=db.scalar(select(func.count()).select_from(ReviewLike).where(ReviewLike.review_id == review_id))
+    count = db.scalar(select(func.count()).select_from(ReviewLike).where(ReviewLike.review_id == review_id)) or 0
     return {"likes": count, "liked": liked}
 
-@app.post("/api/reviews", status_code=201)
-def create_review(payload: ReviewCreate, db: Session=Depends(get_db), user: User=Depends(current_user)):
-    r=Review(user_id=user.id,**payload.model_dump()); db.add(r); db.commit(); db.refresh(r)
-    return {"id":r.id}
+
+@app.post("/api/reviews", status_code=201, dependencies=[Depends(rate_limit("review_create"))])
+def create_review(payload: ReviewCreate, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    _review_eligibility_for_user(db, user, payload.movie_id)
+    review = Review(user_id=user.id, movie_id=payload.movie_id, **payload.model_dump(exclude={"movie_id"}))
+    db.add(review)
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        if "uq_review_user_movie" in str(exc) or "UNIQUE constraint failed" in str(exc):
+            raise HTTPException(409, "You have already reviewed this movie")
+        raise
+    db.refresh(review)
+    return {"id": review.id, "message": "Review created"}
+
+
+@app.patch("/api/reviews/{review_id}", dependencies=[Depends(rate_limit("review_update_delete"))])
+def update_review(review_id: int, payload: ReviewUpdate, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    review = db.get(Review, review_id)
+    if not review:
+        raise HTTPException(404, "Review not found")
+    if review.user_id != user.id:
+        raise HTTPException(403, "You cannot edit another user's review")
+    data = payload.model_dump(exclude_unset=True)
+    if "rating" in data and data["rating"] is not None:
+        review.rating = data["rating"]
+    if "title" in data and data["title"] is not None:
+        review.title = data["title"].strip()
+    if "body" in data and data["body"] is not None:
+        review.body = data["body"].strip()
+    if "spoiler" in data:
+        review.spoiler = bool(data["spoiler"])
+    db.add(review)
+    db.commit()
+    db.refresh(review)
+    return {
+        "id": review.id,
+        "rating": review.rating,
+        "title": review.title,
+        "body": review.body,
+        "spoiler": review.spoiler,
+        "updated_at": review.updated_at.isoformat(),
+        "message": "Review updated",
+    }
+
+
+@app.delete("/api/reviews/{review_id}", dependencies=[Depends(rate_limit("review_update_delete"))])
+def delete_review(review_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    review = db.get(Review, review_id)
+    if not review:
+        raise HTTPException(404, "Review not found")
+    if review.user_id != user.id:
+        raise HTTPException(403, "You cannot delete another user's review")
+    db.delete(review)
+    db.commit()
+    return {"status": "deleted", "review_id": review_id}
 
 @app.post("/api/newsletter", status_code=201, dependencies=[Depends(rate_limit("newsletter"))])
 def newsletter(payload: NewsletterCreate, db: Session=Depends(get_db)):
