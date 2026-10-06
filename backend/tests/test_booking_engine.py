@@ -190,3 +190,125 @@ def test_booking_seat_consistency_invariants_hold():
         assert all(ss.booking_id == confirmed.id for ss in seat_rows)
         assert {row.seat_id for row in db.query(BookingSeat).filter_by(booking_id=confirmed.id)} == set(seat_ids)
         assert db.query(ShowSeat).filter(ShowSeat.show_id == show_id, ShowSeat.status == ShowSeatStatus.BOOKED.value, ShowSeat.booking_id.is_(None)).count() == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 finalization: same-user overlapping-hold regression tests
+# ---------------------------------------------------------------------------
+
+
+def _snapshot(db, show_id, seat_ids):
+    rows = (
+        db.query(ShowSeat)
+        .filter(ShowSeat.show_id == show_id, ShowSeat.seat_id.in_(seat_ids))
+        .order_by(ShowSeat.seat_id)
+        .all()
+    )
+    return {row.seat_id: (row.status, row.booking_id) for row in rows}
+
+
+def test_same_user_partial_overlap_is_rejected_atomically():
+    with TestingSessionLocal() as db:
+        show_id = seed_minimal_show(db)
+        seat_ids = _first_available(db, show_id, 4)
+        user = _make_user(db, "overlap")
+        original = create_hold_for_user(db, user, show_id, seat_ids[:2], "PENDING")
+        original_id = original.id
+        original_ref = original.booking_reference
+        original_total = float(original.total_amount)
+        original_expiry = original.hold_expires_at
+        booking_count = db.query(Booking).count()
+        booking_seat_count = db.query(BookingSeat).count()
+
+        with pytest.raises(SeatConflict) as exc_info:
+            create_hold_for_user(db, user, show_id, seat_ids[1:3], "PENDING")
+        assert seat_ids[1] in exc_info.value.detail["seat_ids"]
+        assert "user" not in str(exc_info.value.detail).lower()
+        assert "email" not in str(exc_info.value.detail).lower()
+
+    with TestingSessionLocal() as db2:
+        refreshed = db2.query(Booking).filter_by(booking_reference=original_ref).one()
+        assert refreshed.status == BookingStatus.HELD.value
+        assert refreshed.id == original_id
+        assert float(refreshed.total_amount) == pytest.approx(original_total)
+        assert refreshed.hold_expires_at == original_expiry
+        assert {row.seat_id for row in refreshed.booking_seats} == set(seat_ids[:2])
+        assert db2.query(Booking).count() == booking_count
+        assert db2.query(BookingSeat).count() == booking_seat_count
+        state = _snapshot(db2, show_id, seat_ids[:3])
+        assert state[seat_ids[0]] == (ShowSeatStatus.HELD.value, original_id)
+        assert state[seat_ids[1]] == (ShowSeatStatus.HELD.value, original_id)
+        assert state[seat_ids[2]][0] == ShowSeatStatus.AVAILABLE.value
+        assert state[seat_ids[2]][1] is None
+
+
+def test_same_user_disjoint_hold_still_works():
+    with TestingSessionLocal() as db:
+        show_id = seed_minimal_show(db)
+        seat_ids = _first_available(db, show_id, 4)
+        user = _make_user(db, "disjoint")
+        first = create_hold_for_user(db, user, show_id, seat_ids[:2], "PENDING")
+        second = create_hold_for_user(db, user, show_id, seat_ids[2:], "PENDING")
+        assert second.id != first.id
+        assert second.booking_reference != first.booking_reference
+        first_id, second_id = first.id, second.id
+
+    with TestingSessionLocal() as db2:
+        first = db2.get(Booking, first_id)
+        second = db2.get(Booking, second_id)
+        assert first.status == BookingStatus.HELD.value
+        assert second.status == BookingStatus.HELD.value
+        assert {row.seat_id for row in first.booking_seats} == set(seat_ids[:2])
+        assert {row.seat_id for row in second.booking_seats} == set(seat_ids[2:])
+        state = _snapshot(db2, show_id, seat_ids)
+        assert state[seat_ids[0]][1] == first_id
+        assert state[seat_ids[1]][1] == first_id
+        assert state[seat_ids[2]][1] == second_id
+        assert state[seat_ids[3]][1] == second_id
+        assert len({v[1] for v in state.values()}) == 2
+        assert all(v[0] == ShowSeatStatus.HELD.value for v in state.values())
+
+
+def test_same_user_exact_duplicate_still_reuses_booking():
+    with TestingSessionLocal() as db:
+        show_id = seed_minimal_show(db)
+        seat_ids = _first_available(db, show_id, 2)
+        user = _make_user(db, "exact")
+        first = create_hold_for_user(db, user, show_id, seat_ids, "PENDING")
+        ref = first.booking_reference
+        total = float(first.total_amount)
+        expiry = first.hold_expires_at
+        second = create_hold_for_user(db, user, show_id, list(reversed(seat_ids)), "PENDING")
+        assert second.id == first.id
+        assert second.booking_reference == ref
+        assert float(second.total_amount) == pytest.approx(total)
+        assert second.hold_expires_at == expiry
+
+    with TestingSessionLocal() as db2:
+        assert db2.query(Booking).filter_by(show_id=show_id).count() == 1
+        booking = db2.query(Booking).filter_by(booking_reference=ref).one()
+        assert db2.query(BookingSeat).filter_by(booking_id=booking.id).count() == len(seat_ids)
+        assert {row.seat_id for row in booking.booking_seats} == set(seat_ids)
+        assert float(booking.total_amount) == pytest.approx(total)
+        assert booking.hold_expires_at == expiry
+
+
+def test_overlap_cannot_corrupt_booking_ownership():
+    with TestingSessionLocal() as db:
+        show_id = seed_minimal_show(db)
+        seat_ids = _first_available(db, show_id, 4)
+        user = _make_user(db, "corrupt")
+        original = create_hold_for_user(db, user, show_id, seat_ids[:2], "PENDING")
+        original_id = original.id
+        with pytest.raises(SeatConflict):
+            create_hold_for_user(db, user, show_id, seat_ids[1:3], "PENDING")
+
+    with TestingSessionLocal() as db2:
+        state = _snapshot(db2, show_id, seat_ids[:3])
+        assert state[seat_ids[0]] == (ShowSeatStatus.HELD.value, original_id)
+        assert state[seat_ids[1]] == (ShowSeatStatus.HELD.value, original_id)
+        assert state[seat_ids[2]][0] == ShowSeatStatus.AVAILABLE.value
+        assert db2.query(BookingSeat).filter_by(show_id=show_id, seat_id=seat_ids[1]).count() == 1
+        owner = db2.query(BookingSeat).filter_by(show_id=show_id, seat_id=seat_ids[1]).one()
+        assert owner.booking_id == original_id
+        assert db2.query(BookingSeat).filter_by(show_id=show_id, seat_id=seat_ids[2]).count() == 0

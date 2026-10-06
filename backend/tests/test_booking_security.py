@@ -157,15 +157,29 @@ def test_same_user_identical_active_hold_reuses_existing_booking(client):
 
 
 def test_same_user_different_seat_set_creates_new_hold(client):
-    seat_ids = silver_seat_ids(client, client.show_id, count=3)
+    # Disjoint sets may coexist as independent holds; any shared seat is a
+    # 409 (see test_same_user_partial_overlap_is_rejected_atomically).
+    seat_ids = silver_seat_ids(client, client.show_id, count=4)
     user = make_user("diffset")
     first = client.post("/api/bookings/hold", json={"user": user, "show_id": client.show_id,
                                                    "seat_ids": seat_ids[:2], "payment_method": "PENDING"})
     second = client.post("/api/bookings/hold", json={"user": user, "show_id": client.show_id,
-                                                    "seat_ids": seat_ids[1:3], "payment_method": "PENDING"})
+                                                    "seat_ids": seat_ids[2:4], "payment_method": "PENDING"})
     assert first.status_code == 201
     assert second.status_code == 201
     assert second.json()["booking_reference"] != first.json()["booking_reference"]
+
+
+def test_same_user_partial_overlap_is_rejected(client):
+    seat_ids = silver_seat_ids(client, client.show_id, count=3)
+    user = make_user("overlap")
+    first = client.post("/api/bookings/hold", json={"user": user, "show_id": client.show_id,
+                                                   "seat_ids": seat_ids[:2], "payment_method": "PENDING"})
+    assert first.status_code == 201
+    second = client.post("/api/bookings/hold", json={"user": user, "show_id": client.show_id,
+                                                    "seat_ids": seat_ids[1:3], "payment_method": "PENDING"})
+    assert second.status_code == 409
+    assert seat_ids[1] in second.json()["detail"]["seat_ids"]
 
 
 def test_same_user_expired_hold_is_not_reused(client):

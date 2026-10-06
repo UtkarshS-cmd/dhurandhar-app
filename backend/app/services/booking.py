@@ -413,8 +413,9 @@ def cleanup_expired_holds(db: Session) -> None:
     booking_transaction(db, lambda: _cleanup_expired_holds(db))
 
 
-def _cleanup_expired_holds(db: Session) -> None:
-    now = utcnow()
+def _cleanup_expired_holds(db: Session, now=None) -> None:
+    if now is None:
+        now = utcnow()
     expired_bookings = db.scalars(
         select(Booking)
         .where(
@@ -491,7 +492,15 @@ def validate_show_and_seats(show_id: int, seat_ids: list[int], db: Session):
 
 
 def _find_active_hold_for_same_user_and_seats(db: Session, user_id: int, show_id: int, seat_ids: list[int]) -> Booking | None:
-    """Return the existing active hold for the same user + same exact seat set."""
+    """Return the existing active hold for the same user + same exact seat set.
+
+    .. deprecated::
+        Kept only for backwards compatibility with external callers.
+        :func:`create_hold_for_user` no longer uses this helper because it
+        queries bookings *before* the requested seat rows are locked, which is
+        a TOCTOU race. Exact-duplicate reuse is now decided from the locked
+        seat rows inside the hold transaction.
+    """
     seat_set = frozenset(seat_ids)
     for booking in db.scalars(
         select(Booking)
@@ -515,37 +524,80 @@ def create_hold_for_user(db: Session, user: User, show_id: int, seat_ids: list[i
 
     def _op() -> Booking:
         show, rows = validate_show_and_seats(show_id, seat_ids, db)
-        lock_rows = db.scalars(locked_seat_statement(show.id, seat_ids)).all()
         now = utcnow()
-
-        same_booking = _find_active_hold_for_same_user_and_seats(db, user.id, show.id, seat_ids)
-        if same_booking is not None:
-            return same_booking
+        # Release expired holds atomically in the SAME transaction before any
+        # ownership decision, so a stale hold never reads as an active
+        # conflict and stale BookingSeat rows never linger alongside the
+        # seats we are about to re-hold. Same ``now`` is reused below so the
+        # expiry predicate cannot flip mid-transaction.
+        _cleanup_expired_holds(db, now)
+        # Lock all requested seats deterministically inside this transaction.
+        # All ownership decisions below read only these locked rows (plus
+        # their owner booking rows), so there is no check-then-act gap.
+        lock_rows = db.scalars(locked_seat_statement(show.id, seat_ids)).all()
+        if len(lock_rows) != len(set(seat_ids)):
+            raise InvalidSeatRequest("One or more seats do not belong to this show")
+        requested = frozenset(seat_ids)
 
         conflicts: list[int] = []
+        # Collect active owners of the locked seats to decide exact-reuse.
+        active_owner_ids: set[int] = set()
         for ss in lock_rows:
             if ss.status == ShowSeatStatus.BOOKED.value:
                 conflicts.append(ss.seat_id)
                 continue
-            if (
-                ss.status == ShowSeatStatus.HELD.value
-                and ss.hold_expires_at is not None
-                and ss.hold_expires_at > now
-            ):
-                owner = db.get(Booking, ss.booking_id) if ss.booking_id is not None else None
-                if owner is not None and owner.user_id == user.id and owner.show_id == show.id:
-                    if {row.seat_id for row in owner.booking_seats} == frozenset(seat_ids):
-                        return owner
-                    # Same user may hold another set of seats concurrently; only
-                    # a different user's active hold is a conflict for this
-                    # request. This allows a new hold to be created for a
-                    # different seat set belonging to the same account.
+            if ss.status == ShowSeatStatus.HELD.value:
+                if ss.hold_expires_at is not None and ss.hold_expires_at > now:
+                    if ss.booking_id is not None:
+                        active_owner_ids.add(ss.booking_id)
+                    else:
+                        # Defensive broken state: HELD seat with no owner.
+                        # Fail closed, never overwrite blindly.
+                        conflicts.append(ss.seat_id)
                     continue
+                # HELD but expired (or missing expiry): _cleanup above already
+                # released every row with hold_expires_at < now, so anything
+                # left here is a boundary/stale row. It carries no active
+                # ownership and will be overwritten below.
+                continue
+            if ss.status != ShowSeatStatus.AVAILABLE.value:
                 conflicts.append(ss.seat_id)
 
         if conflicts:
             raise SeatConflict(
                 {"message": "One or more selected seats are unavailable", "seat_ids": sorted(set(conflicts))}
+            )
+
+        if active_owner_ids:
+            # Every requested seat is now either AVAILABLE (or stale-expired)
+            # or actively HELD. Any active hold that is not the exact same
+            # booking is a 409 — including a same-user partial overlap — so
+            # two active bookings can never own the same seat.
+            if len(active_owner_ids) == 1:
+                owner_id = next(iter(active_owner_ids))
+                owner = db.get(Booking, owner_id)
+                if (
+                    owner is not None
+                    and owner.user_id == user.id
+                    and owner.show_id == show.id
+                    and owner.status == BookingStatus.HELD.value
+                    and owner.hold_expires_at is not None
+                    and owner.hold_expires_at > now
+                    and all(ss.status == ShowSeatStatus.HELD.value for ss in lock_rows)
+                    and all(ss.booking_id == owner_id for ss in lock_rows)
+                    and {row.seat_id for row in owner.booking_seats} == requested
+                ):
+                    # Exact duplicate: idempotent reuse, no mutation at all —
+                    # same reference, same total, same expiry, no new rows,
+                    # no hold extension.
+                    return owner
+            raise SeatConflict(
+                {
+                    "message": "One or more selected seats are unavailable",
+                    "seat_ids": sorted(
+                        {ss.seat_id for ss in lock_rows if ss.status == ShowSeatStatus.HELD.value}
+                    ),
+                }
             )
 
         expires = now + HOLD_TTL

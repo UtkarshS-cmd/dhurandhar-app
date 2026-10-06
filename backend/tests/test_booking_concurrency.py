@@ -133,6 +133,13 @@ def test_overlapping_seats_one_transaction_wins_no_partial_commit():
         assert len(held) == 2
         assert db.query(Booking).filter_by(show_id=show_id, status=BookingStatus.HELD.value).count() == 1
         assert db.query(BookingSeat).filter(BookingSeat.show_id == show_id).count() == 2
+        # Explicit invariant: at most one active owner per seat — the shared
+        # seat belongs to exactly one booking and one BookingSeat row.
+        assert db.query(BookingSeat).filter_by(show_id=show_id, seat_id=seat_ids[1]).count() == 1
+        shared = db.query(ShowSeat).filter_by(show_id=show_id, seat_id=seat_ids[1]).one()
+        assert shared.booking_id is not None
+        owner = db.query(BookingSeat).filter_by(show_id=show_id, seat_id=seat_ids[1]).one()
+        assert owner.booking_id == shared.booking_id
 
 
 def test_reverse_order_same_seats_no_deadlock_and_at_most_one_wins():
