@@ -276,12 +276,25 @@
 .pd-item.danger:hover { color:#e07070; }
 .pd-sep { height:1px;background:rgba(201,168,76,0.08);margin:4px 0; }
 
-/* My bookings panel */
+/* Profile + bookings panels */
+#profile-modal,
 #my-bookings-modal { position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,0.9);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.3s;padding:16px; }
+#profile-modal.open,
 #my-bookings-modal.open { opacity:1;pointer-events:all; }
+.profile-panel,
 .bookings-panel { background:#0f0c07;border:1px solid rgba(201,168,76,0.2);width:100%;max-width:700px;max-height:85vh;overflow-y:auto;position:relative; }
 .bp-header { padding:20px 24px;border-bottom:1px solid rgba(201,168,76,0.1);display:flex;justify-content:space-between;align-items:center; }
 .bp-header h3 { font-family:'Cinzel',serif;font-size:16px;color:#e8cc7e;letter-spacing:0.1em; }
+.profile-body { padding:24px; display:grid; gap:24px; }
+.profile-section { border:1px solid rgba(201,168,76,0.12); padding:20px; background:rgba(201,168,76,0.02); }
+.profile-section h4 { margin:0 0 18px; font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:rgba(232,204,126,0.7); }
+.profile-field { margin-bottom:16px; }
+.profile-field label { display:block;font-size:10px;letter-spacing:0.25em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px; }
+.profile-field input { width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:14px;outline:none;transition:border-color 0.3s; }
+.profile-field input[readonly] { opacity:0.8; cursor:not-allowed; }
+.profile-field input:focus { border-color:rgba(201,168,76,0.45); }
+.profile-actions { display:flex; justify-content:flex-end; }
+.auth-btn.secondary { background:rgba(201,168,76,0.12); color:var(--gold); border:1px solid rgba(201,168,76,0.25); }
 .booking-ticket { border:1px solid rgba(201,168,76,0.12);margin:16px 24px;padding:18px;position:relative; }
 .booking-ticket .bt-ref { font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.2em;color:var(--gold);margin-bottom:8px; }
 .booking-ticket .bt-row { display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid rgba(201,168,76,0.05); }

@@ -46,22 +46,20 @@ def verify_password(password: str, encoded: str) -> bool:
     except Exception:
         return False
 
-def create_token(user_id: int) -> str:
+def create_token(user_id: int, token_version: int | None = None) -> str:
     now = datetime.now(timezone.utc)
+    payload = {"sub": str(user_id), "iat": now, "exp": now + TOKEN_TTL}
+    if token_version is not None:
+        payload["ver"] = int(token_version)
     return jwt.encode(
-        {"sub": str(user_id), "iat": now, "exp": now + TOKEN_TTL},
+        payload,
         settings.jwt_secret,
         algorithm=ALGORITHM,
     )
 
-def decode_token(token: str) -> int:
-    """Validate a bearer token and return the user id.
 
-    Raises ``AuthenticationError`` for *any* malformed, expired, tampered,
-    wrongly-signed or claim-invalid token. Only HS256 is accepted (algorithm
-    confusion is impossible), ``sub``/``exp`` are mandatory and ``sub`` must
-    be a positive integer. PyJWT exception types never leave this function.
-    """
+def decode_token_payload(token: str) -> dict:
+    """Validate a bearer token and return the verified payload."""
     if not isinstance(token, str) or not token:
         raise AuthenticationError("empty token")
     try:
@@ -74,6 +72,21 @@ def decode_token(token: str) -> int:
         user_id = int(payload["sub"])
     except (jwt.PyJWTError, ValueError, TypeError, KeyError):
         raise AuthenticationError("invalid token") from None
+    if user_id < 1:
+        raise AuthenticationError("invalid subject")
+    return payload
+
+
+def decode_token(token: str) -> int:
+    """Validate a bearer token and return the user id.
+
+    Raises ``AuthenticationError`` for *any* malformed, expired, tampered,
+    wrongly-signed or claim-invalid token. Only HS256 is accepted (algorithm
+    confusion is impossible), ``sub``/``exp`` are mandatory and ``sub`` must
+    be a positive integer. PyJWT exception types never leave this function.
+    """
+    payload = decode_token_payload(token)
+    user_id = int(payload["sub"])
     if user_id < 1:
         raise AuthenticationError("invalid subject")
     return user_id

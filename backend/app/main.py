@@ -20,7 +20,7 @@ from .models import (
 )
 from .schemas import *
 from .security import (
-    hash_password, verify_password, create_token, decode_token,
+    hash_password, verify_password, create_token, decode_token, decode_token_payload,
     AuthenticationError, generate_booking_reference, is_valid_booking_reference,
 )
 from .ratelimit import rate_limit
@@ -57,7 +57,7 @@ if settings.cors_origins:
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
         allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
     )
 
@@ -124,11 +124,22 @@ def current_user(db: Session = Depends(get_db), authorization: str | None = Head
     if scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"})
     try:
-        uid = decode_token(token.strip())
+        payload = decode_token_payload(token.strip())
+        uid = int(payload["sub"])
     except AuthenticationError:
         raise HTTPException(401, "Invalid or expired session", headers={"WWW-Authenticate": "Bearer"})
     user = db.get(User, uid)
-    if not user:
+    if not user or not user.is_active:
+        raise HTTPException(401, "Invalid or expired session", headers={"WWW-Authenticate": "Bearer"})
+    try:
+        token_version = payload.get("ver")
+        if token_version is None:
+            if user.token_version != 1:
+                raise ValueError("missing token version")
+        else:
+            if int(token_version) != user.token_version:
+                raise ValueError("token version mismatch")
+    except (TypeError, ValueError):
         raise HTTPException(401, "Invalid or expired session", headers={"WWW-Authenticate": "Bearer"})
     return user
 
@@ -145,10 +156,12 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
         full_name=payload.full_name.strip(),
         email=payload.email.lower(),
         phone=payload.phone,
-        password_hash=hash_password(payload.password)
+        password_hash=hash_password(payload.password),
+        is_active=True,
+        token_version=1,
     )
     db.add(user); db.commit(); db.refresh(user)
-    return AuthOut(access_token=create_token(user.id), user=UserOut.model_validate(user, from_attributes=True))
+    return AuthOut(access_token=create_token(user.id, user.token_version), user=UserOut.model_validate(user, from_attributes=True))
 
 @app.post("/api/auth/login", response_model=AuthOut,
           dependencies=[Depends(rate_limit("login", "identity")), Depends(rate_limit("login_ip"))])
@@ -156,9 +169,9 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     # Uniform failure for unknown email and wrong password alike: responses
     # never reveal which accounts exist.
     user = db.scalar(select(User).where(User.email == payload.email.lower()))
-    if not user or not verify_password(payload.password, user.password_hash):
+    if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    return AuthOut(access_token=create_token(user.id), user=UserOut.model_validate(user, from_attributes=True))
+    return AuthOut(access_token=create_token(user.id, user.token_version), user=UserOut.model_validate(user, from_attributes=True))
 
 @app.get("/api/dates")
 def available_dates():
@@ -408,6 +421,35 @@ def get_booking(reference: str, db: Session = Depends(get_db)):
     b=db.scalar(select(Booking).where(Booking.booking_reference==reference))
     if not b: raise HTTPException(404,"Booking not found")
     return booking_out(db,b)
+
+@app.get("/api/me", response_model=UserOut)
+def me(user: User = Depends(current_user)):
+    return UserOut.model_validate(user, from_attributes=True)
+
+
+@app.patch("/api/me", response_model=UserOut)
+def update_me(payload: UserProfileUpdate, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if payload.full_name is not None:
+        user.full_name = payload.full_name.strip()
+    if payload.phone is not None:
+        user.phone = payload.phone
+    db.add(user)
+    db.commit(); db.refresh(user)
+    return UserOut.model_validate(user, from_attributes=True)
+
+
+@app.post("/api/me/password")
+def change_password(payload: PasswordChangeRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid current password")
+    if payload.new_password == payload.current_password:
+        raise HTTPException(status_code=422, detail="New password must be different from the current password")
+    user.password_hash = hash_password(payload.new_password)
+    user.token_version = (user.token_version or 0) + 1
+    db.add(user)
+    db.commit()
+    return {"status": "ok"}
+
 
 @app.get("/api/me/bookings", response_model=list[BookingOut])
 def my_bookings(db: Session=Depends(get_db), user: User=Depends(current_user)):

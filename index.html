@@ -644,12 +644,59 @@
   </div>
 </div>
 
+<!-- PROFILE MODAL -->
+<div id="profile-modal">
+  <div class="profile-panel">
+    <div class="bp-header">
+      <h3>PROFILE</h3>
+      <button type="button" data-action="close-profile" style="background:none;border:none;color:rgba(201,168,76,0.4);font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <div class="profile-body">
+      <div class="profile-section">
+        <h4>Personal Information</h4>
+        <div class="profile-field">
+          <label for="profile-full-name">Full Name</label>
+          <input id="profile-full-name" type="text" autocomplete="name">
+        </div>
+        <div class="profile-field">
+          <label for="profile-email">Email</label>
+          <input id="profile-email" type="email" autocomplete="email" readonly>
+        </div>
+        <div class="profile-field">
+          <label for="profile-phone">Phone</label>
+          <input id="profile-phone" type="tel" autocomplete="tel">
+        </div>
+        <button class="auth-btn" data-action="save-profile">Save Changes</button>
+        <div class="auth-err" id="profile-err" role="alert"></div>
+        <div class="auth-ok" id="profile-ok" role="status"></div>
+      </div>
+      <div class="profile-section">
+        <h4>Security</h4>
+        <div class="profile-field">
+          <label for="profile-current-password">Current Password</label>
+          <input id="profile-current-password" type="password" autocomplete="current-password">
+        </div>
+        <div class="profile-field">
+          <label for="profile-new-password">New Password</label>
+          <input id="profile-new-password" type="password" autocomplete="new-password">
+        </div>
+        <button class="auth-btn secondary" data-action="change-password">Change Password</button>
+        <div class="auth-err" id="password-err" role="alert"></div>
+        <div class="auth-ok" id="password-ok" role="status"></div>
+      </div>
+      <div class="profile-section profile-actions">
+        <button type="button" class="pd-item danger" data-action="logout">Sign Out</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MY BOOKINGS MODAL -->
 <div id="my-bookings-modal">
   <div class="bookings-panel">
     <div class="bp-header">
       <h3>MY BOOKINGS</h3>
-      <button data-action="close-my-bookings" style="background:none;border:none;color:rgba(201,168,76,0.4);font-size:18px;cursor:pointer;">✕</button>
+      <button type="button" data-action="close-my-bookings" style="background:none;border:none;color:rgba(201,168,76,0.4);font-size:18px;cursor:pointer;">✕</button>
     </div>
     <div id="my-bookings-list" style="padding-bottom:24px;"></div>
   </div>

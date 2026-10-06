@@ -3,7 +3,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 # Payment methods accepted by the API. "PENDING" is the placeholder the
 # checkout sends while holding seats; the remaining values mirror the payment
@@ -37,6 +37,7 @@ class _NormalizedEmail(BaseModel):
 
 
 class UserCreate(_NormalizedEmail):
+    model_config = ConfigDict(extra="forbid")
     full_name: str = Field(min_length=3, max_length=120)
     email: EmailStr
     phone: str = Field(min_length=10, max_length=30)
@@ -59,16 +60,50 @@ class UserCreate(_NormalizedEmail):
         return digits
 
 class LoginRequest(_NormalizedEmail):
+    model_config = ConfigDict(extra="forbid")
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
 
 class UserOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     id: int
     full_name: str
     email: EmailStr
     phone: str
 
+class UserProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    full_name: str | None = Field(default=None, min_length=3, max_length=120)
+    phone: str | None = Field(default=None, min_length=10, max_length=30)
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def strip_full_name(cls, value: str) -> str:
+        return _strip(value)
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone(cls, v: str) -> str:
+        digits = "".join(ch for ch in v if ch.isdigit())
+        if digits.startswith("91") and len(digits) == 12:
+            digits = digits[2:]
+        if len(digits) != 10 or digits[0] not in "6789":
+            raise ValueError("Enter a valid 10-digit Indian mobile number")
+        return digits
+
+    @model_validator(mode="after")
+    def require_one_field(self):
+        if self.full_name is None and self.phone is None:
+            raise ValueError("Provide at least one profile field to update")
+        return self
+
+class PasswordChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
 class AuthOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     access_token: str
     token_type: str = "bearer"
     user: UserOut

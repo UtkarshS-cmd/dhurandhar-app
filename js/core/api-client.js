@@ -159,3 +159,4 @@ export async function request(path, options = {}) {
 
 export const get = (path, options) => request(path, { ...options, method: 'GET' });
 export const post = (path, body, options) => request(path, { ...options, method: 'POST', body });
+export const patch = (path, body, options) => request(path, { ...options, method: 'PATCH', body });

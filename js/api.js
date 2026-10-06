@@ -2,7 +2,7 @@
 // No other module calls fetch() directly (single door into the network).
 // Auth headers are attached automatically from the session store.
 
-import { get, post } from './core/api-client.js';
+import { get, patch, post } from './core/api-client.js';
 
 // -- catalog (cities / dates / theaters / shows / seats) --------------------
 export const fetchCities = (options) => get('/cities', options);
@@ -16,6 +16,9 @@ export const fetchSeats = (showId, options) =>
 // -- auth (contract unchanged) ---------------------------------------------
 export const register = (payload) => post('/auth/register', payload);
 export const login = (payload) => post('/auth/login', payload);
+export const fetchMe = () => get('/me');
+export const updateMe = (payload) => patch('/me', payload);
+export const changePassword = (payload) => post('/me/password', payload);
 
 // -- bookings ---------------------------------------------------------------
 export const createHold = (payload) => post('/bookings/hold', payload);
