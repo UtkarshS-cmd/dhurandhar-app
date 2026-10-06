@@ -32,7 +32,7 @@
   <a href="#cast" data-action="close-menu">Cast</a>
   <a href="#music" data-action="close-menu">Music</a>
 </div>
-<nav id="navbar">
+<nav id="navbar" aria-label="Main navigation">
   <a href="#hero" class="nav-logo">Dhurandhar</a>
   <ul class="nav-links">
   <li><a href="#reviews">Reviews</a></li>
@@ -340,11 +340,11 @@
       <div style="font-size:11px;letter-spacing:0.35em;color:rgba(201,168,76,0.6);text-transform:uppercase;margin-bottom:16px;">Write Your Review</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px;">
         <div>
-          <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Rating (1–10)</label>
+          <label for="r-rating" style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Rating (1–10)</label>
           <input id="r-rating" type="number" min="1" max="10" placeholder="8" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:10px 12px;font-size:14px;outline:none;">
         </div>
         <div>
-          <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Review Title</label>
+          <label for="r-title" style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Review Title</label>
           <input id="r-title" type="text" placeholder="A masterpiece of spy cinema" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:10px 12px;font-size:14px;outline:none;">
         </div>
       </div>
@@ -377,21 +377,21 @@
       <p class="section-label" style="text-align:left;">Get In Touch</p>
       <h2 style="font-family:'Cinzel Decorative',serif;font-size:28px;color:#e8cc7e;letter-spacing:0.05em;margin-bottom:28px;line-height:1.2;">CONTACT<br>US</h2>
       <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Your Name</label>
+        <label for="c-name" style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Your Name</label>
         <input id="c-name" type="text" placeholder="Full name" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;">
       </div>
       <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Email Address</label>
+        <label for="c-email" style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Email Address</label>
         <input id="c-email" type="email" placeholder="your@email.com" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;">
       </div>
       <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Subject</label>
+        <label for="c-subject" style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Subject</label>
         <select id="c-subject" style="width:100%;background:#0f0c07;border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;-webkit-appearance:none;">
           <option>General Enquiry</option><option>Booking Support</option><option>Technical Issue</option><option>Press & Media</option><option>Feedback</option>
         </select>
       </div>
       <div style="margin-bottom:16px;">
-        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Message</label>
+        <label for="c-message" style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Message</label>
         <textarea id="c-message" rows="4" placeholder="Your message…" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;resize:vertical;font-family:inherit;"></textarea>
       </div>
       <button data-action="submit-contact" style="background:linear-gradient(135deg,#a07830,#c9a84c);color:#080806;border:none;padding:12px 28px;font-size:12px;letter-spacing:0.25em;text-transform:uppercase;cursor:pointer;font-weight:700;font-family:inherit;width:100%;">Send Message</button>
@@ -404,11 +404,11 @@
       <h2 style="font-family:'Cinzel Decorative',serif;font-size:28px;color:#e8cc7e;letter-spacing:0.05em;margin-bottom:14px;line-height:1.2;">NEWSLETTER</h2>
       <p style="color:rgba(212,200,168,0.5);font-size:13px;line-height:1.7;margin-bottom:28px;letter-spacing:0.03em;">Get exclusive updates on Dhurandhar Part II, behind-the-scenes content, exclusive stills, and early booking alerts — delivered straight to your inbox.</p>
       <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Your Name</label>
+        <label for="nl-name" style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Your Name</label>
         <input id="nl-name" type="text" placeholder="First name" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;">
       </div>
       <div style="margin-bottom:20px;">
-        <label style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Email Address</label>
+        <label for="nl-email" style="display:block;font-size:10px;letter-spacing:0.3em;color:rgba(201,168,76,0.5);text-transform:uppercase;margin-bottom:6px;">Email Address</label>
         <input id="nl-email" type="email" placeholder="your@email.com" style="width:100%;background:rgba(201,168,76,0.04);border:1px solid rgba(201,168,76,0.15);color:#d4c8a8;padding:11px 14px;font-size:13px;outline:none;">
       </div>
       <button data-action="submit-newsletter" style="background:rgba(201,168,76,0.1);color:#c9a84c;border:1px solid rgba(201,168,76,0.3);padding:12px 28px;font-size:12px;letter-spacing:0.25em;text-transform:uppercase;cursor:pointer;font-weight:700;font-family:inherit;width:100%;transition:all 0.3s;">Subscribe to Updates</button>
@@ -453,44 +453,44 @@
     </div>
 
     <!-- Step Tabs -->
-    <div class="modal-steps">
-      <div class="modal-step-tab active" id="stab1"><span class="step-num">1</span>Register</div>
-      <div class="modal-step-tab" id="stab2"><span class="step-num">2</span>Theater</div>
-      <div class="modal-step-tab" id="stab3"><span class="step-num">3</span>Seats</div>
-      <div class="modal-step-tab" id="stab4"><span class="step-num">4</span>Confirm</div>
+    <div class="modal-steps" role="tablist" aria-label="Booking steps">
+      <div class="modal-step-tab active" id="stab1" role="tab" aria-selected="true"><span class="step-num">1</span>Register</div>
+      <div class="modal-step-tab" id="stab2" role="tab" aria-selected="false"><span class="step-num">2</span>Theater</div>
+      <div class="modal-step-tab" id="stab3" role="tab" aria-selected="false"><span class="step-num">3</span>Seats</div>
+      <div class="modal-step-tab" id="stab4" role="tab" aria-selected="false"><span class="step-num">4</span>Confirm</div>
     </div>
 
     <!-- STEP 1: REGISTER -->
     <div class="modal-panel active" id="mpanel1">
       <div class="form-row" id="fr-name">
-        <label>Full Name</label>
+        <label for="f-name">Full Name</label>
         <input type="text" id="f-name" placeholder="Enter your full name" autocomplete="name">
         <div class="err-msg">Please enter your full name (min 3 characters)</div>
       </div>
       <div class="form-row" id="fr-email">
-        <label>Email Address</label>
+        <label for="f-email">Email Address</label>
         <input type="email" id="f-email" placeholder="your@email.com" autocomplete="email">
         <div class="err-msg">Please enter a valid email address</div>
       </div>
       <div class="form-row" id="fr-phone">
-        <label>Contact Number</label>
+        <label for="f-phone">Contact Number</label>
         <input type="tel" id="f-phone" placeholder="+91 XXXXX XXXXX" autocomplete="tel">
         <div class="err-msg">Please enter a valid 10-digit mobile number</div>
       </div>
       <div class="form-row" id="fr-pwd">
-        <label>Password</label>
+        <label for="f-pwd">Password</label>
         <div class="input-icon-wrap">
           <input type="password" id="f-pwd" placeholder="Min 8 characters" autocomplete="new-password">
-          <button class="eye-btn" type="button" data-action="toggle-password" data-target="f-pwd">👁</button>
+          <button class="eye-btn" type="button" data-action="toggle-password" data-target="f-pwd" aria-label="Show password">👁</button>
         </div>
         <div class="err-msg">Password must be at least 8 characters</div>
         <div class="hint">Include letters, numbers, and a special character</div>
       </div>
       <div class="form-row" id="fr-cpwd">
-        <label>Confirm Password</label>
+        <label for="f-cpwd">Confirm Password</label>
         <div class="input-icon-wrap">
           <input type="password" id="f-cpwd" placeholder="Re-enter password" autocomplete="new-password">
-          <button class="eye-btn" type="button" data-action="toggle-password" data-target="f-cpwd">👁</button>
+          <button class="eye-btn" type="button" data-action="toggle-password" data-target="f-cpwd" aria-label="Show password confirmation">👁</button>
         </div>
         <div class="err-msg">Passwords do not match</div>
       </div>
@@ -500,18 +500,18 @@
     <!-- STEP 2: THEATER -->
     <div class="modal-panel" id="mpanel2">
       <div class="form-row" id="fr-city">
-        <label>Select City</label>
-        <select id="f-city" data-action="update-theaters" aria-label="Select city"><option value="">— Choose your city —</option></select>
+        <label for="f-city">Select City</label>
+        <select id="f-city" aria-label="Select city"><option value="">— Choose your city —</option></select>
         <div class="err-msg">Please select a city</div>
       </div>
       <div class="form-row" id="fr-date">
-        <label>Select Date</label>
+        <label for="f-date">Select Date</label>
         <select id="f-date" aria-label="Select date"><option value="">— Select date —</option></select>
         <div class="err-msg">Please select a date</div>
       </div>
       <div class="form-row" id="fr-theater">
-        <label>Nearby Theaters</label>
-        <div class="theater-grid" id="theaterGrid">
+        <label id="theater-label">Nearby Theaters</label>
+        <div class="theater-grid" id="theaterGrid" role="group" aria-labelledby="theater-label">
           <div style="padding:20px;text-align:center;color:rgba(201,168,76,0.3);font-size:13px;letter-spacing:0.2em;">Select city to see theaters</div>
         </div>
         <div class="err-msg" id="theater-err" style="display:none;">Please select a theater and show time</div>
@@ -523,8 +523,8 @@
     <!-- STEP 3: SEATS -->
     <div class="modal-panel" id="mpanel3">
       <div class="form-row">
-        <label>Number of Tickets</label>
-        <select id="f-tickets" data-action="update-seats">
+        <label for="f-tickets">Number of Tickets</label>
+        <select id="f-tickets" aria-label="Number of tickets">
           <option value="1">1 Ticket</option>
           <option value="2" selected>2 Tickets</option>
           <option value="3">3 Tickets</option>
@@ -535,7 +535,7 @@
       </div>
 
       <div class="form-row">
-        <label>Category</label>
+        <label for="f-category">Category</label>
         <select id="f-category" aria-label="Seat category">
            <option value="Gold">Gold — ₹450</option>
            <option value="Silver" selected>Silver — ₹350</option>
@@ -560,10 +560,10 @@
           <div class="seats-row" id="bronze-seats"></div>
         </div>
 
-        <div class="seat-legend">
-          <div class="legend-item"><div class="legend-dot avail"></div>Available</div>
-          <div class="legend-item"><div class="legend-dot sel"></div>Selected</div>
-          <div class="legend-item"><div class="legend-dot tak"></div>Taken</div>
+        <div class="seat-legend" aria-hidden="false">
+          <div class="legend-item"><span class="legend-dot avail" aria-hidden="true"></span>○ Available</div>
+          <div class="legend-item"><span class="legend-dot sel" aria-hidden="true"></span>◉ Selected</div>
+          <div class="legend-item"><span class="legend-dot tak" aria-hidden="true"></span>✕ Taken</div>
         </div>
         <div class="err-msg" id="seat-err" style="display:none;margin-top:10px;">Please select the required number of seats</div>
       </div>
@@ -574,10 +574,10 @@
 
     <!-- STEP 4: CONFIRM -->
     <div class="modal-panel" id="mpanel4">
-      <div class="summary-box" id="summaryBox"></div>
+      <div class="summary-box" id="summaryBox" aria-live="polite"></div>
       <div class="form-row" style="margin-top:20px;" id="fr-upi">
-        <label>Payment Method</label>
-        <select id="f-payment">
+        <label for="f-payment">Payment Method</label>
+        <select id="f-payment" aria-label="Payment method">
           <option>UPI / Google Pay / PhonePe</option>
           <option>Credit / Debit Card</option>
           <option>Net Banking</option>
@@ -585,8 +585,8 @@
         </select>
       </div>
       <div class="form-row" id="fr-upiid" style="display:none;">
-        <label>UPI ID</label>
-        <input type="text" id="f-upiid" placeholder="yourname@upi">
+        <label for="f-upiid">UPI ID</label>
+        <input type="text" id="f-upiid" placeholder="yourname@upi" autocomplete="off">
       </div>
       <div class="form-row">
         <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
@@ -619,27 +619,27 @@
 <div id="auth-modal">
   <div class="auth-box">
     <button type="button" class="auth-close" aria-label="Close sign in dialog" data-action="close-auth">✕</button>
-    <div class="auth-tabs">
-      <div class="auth-tab active" data-auth-tab="login">Sign In</div>
-      <div class="auth-tab" data-auth-tab="register">Register</div>
+    <div class="auth-tabs" role="tablist" aria-label="Sign in or register">
+      <div class="auth-tab active" data-auth-tab="login" role="tab" tabindex="0" aria-selected="true" id="authtab-login" aria-controls="auth-login">Sign In</div>
+      <div class="auth-tab" data-auth-tab="register" role="tab" tabindex="0" aria-selected="false" id="authtab-register" aria-controls="auth-register">Register</div>
     </div>
     <!-- LOGIN -->
-    <div class="auth-panel active" id="auth-login">
-      <div class="auth-field"><label>Email</label><input id="al-email" type="email" placeholder="your@email.com"></div>
-      <div class="auth-field"><label>Password</label><input id="al-pwd" type="password" placeholder="••••••••"></div>
+    <div class="auth-panel active" id="auth-login" role="tabpanel" aria-labelledby="authtab-login">
+      <div class="auth-field"><label for="al-email">Email</label><input id="al-email" type="email" placeholder="your@email.com" autocomplete="email"></div>
+      <div class="auth-field"><label for="al-pwd">Password</label><input id="al-pwd" type="password" placeholder="••••••••" autocomplete="current-password"></div>
       <button class="auth-btn" data-action="auth-login">Sign In</button>
-      <div class="auth-err" id="al-err"></div>
-      <p style="text-align:center;margin-top:12px;font-size:12px;color:rgba(212,200,168,0.4);">No account? <span style="color:rgba(201,168,76,0.7);cursor:pointer;text-decoration:underline" data-auth-tab="register">Register here</span></p>
+      <div class="auth-err" id="al-err" role="alert"></div>
+      <p style="text-align:center;margin-top:12px;font-size:12px;color:rgba(212,200,168,0.4);">No account? <button type="button" style="background:none;border:none;font:inherit;color:rgba(201,168,76,0.7);cursor:pointer;text-decoration:underline" data-auth-tab="register">Register here</button></p>
     </div>
     <!-- REGISTER -->
-    <div class="auth-panel" id="auth-register">
-      <div class="auth-field"><label>Full Name</label><input id="ar-name" type="text" placeholder="Your name"></div>
-      <div class="auth-field"><label>Email</label><input id="ar-email" type="email" placeholder="your@email.com"></div>
-      <div class="auth-field"><label>Phone</label><input id="ar-phone" type="tel" placeholder="10-digit mobile number"></div>
-      <div class="auth-field"><label>Password</label><input id="ar-pwd" type="password" placeholder="Min 8 characters"></div>
+    <div class="auth-panel" id="auth-register" role="tabpanel" aria-labelledby="authtab-register">
+      <div class="auth-field"><label for="ar-name">Full Name</label><input id="ar-name" type="text" placeholder="Your name" autocomplete="name"></div>
+      <div class="auth-field"><label for="ar-email">Email</label><input id="ar-email" type="email" placeholder="your@email.com" autocomplete="email"></div>
+      <div class="auth-field"><label for="ar-phone">Phone</label><input id="ar-phone" type="tel" placeholder="10-digit mobile number" autocomplete="tel"></div>
+      <div class="auth-field"><label for="ar-pwd">Password</label><input id="ar-pwd" type="password" placeholder="Min 8 characters" autocomplete="new-password"></div>
       <button class="auth-btn" data-action="auth-register">Create Account</button>
-      <div class="auth-err" id="ar-err"></div>
-      <div class="auth-ok" id="ar-ok"></div>
+      <div class="auth-err" id="ar-err" role="alert"></div>
+      <div class="auth-ok" id="ar-ok" role="status"></div>
     </div>
   </div>
 </div>

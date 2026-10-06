@@ -18,7 +18,8 @@ const attemptPlay = (video) => {
 export function initVideo() {
   const video = document.getElementById('bg-video');
   const button = document.getElementById('video-mute-btn');
-  if (!video || !button) return;
+  if (!video || !button || video.dataset.init === '1') return; // idempotent re-init
+  video.dataset.init = '1';
 
   let muted = true;
 

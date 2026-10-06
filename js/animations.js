@@ -1,5 +1,9 @@
 
 export function initAnimations() {
+  const body = document.body;
+  if (body.dataset.animationsInit === '1') return; // idempotent re-init
+  body.dataset.animationsInit = '1';
+
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const reveals = document.querySelectorAll('.reveal');
   if (reduced) {

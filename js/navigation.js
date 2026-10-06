@@ -4,6 +4,8 @@ export function initNavigation() {
   const menu = document.getElementById('mobile-menu');
   const hamburger = document.getElementById('hamburger');
   const close = document.getElementById('menu-close');
+  if (!navbar || navbar.dataset.init === '1') return; // idempotent re-init
+  navbar.dataset.init = '1';
 
   const setMenu = (open) => {
     menu?.classList.toggle('open', open);
@@ -13,28 +15,32 @@ export function initNavigation() {
 
   hamburger?.addEventListener('click', () => setMenu(true));
   close?.addEventListener('click', () => setMenu(false));
-  menu?.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => setMenu(false)));
 
   let lastScrolled = null;
   const updateNav = () => {
     const scrolled = window.scrollY > 70;
     if (scrolled !== lastScrolled) {
-      navbar?.classList.toggle('scrolled', scrolled);
+      navbar.classList.toggle('scrolled', scrolled);
       lastScrolled = scrolled;
     }
   };
-  window.addEventListener('scroll', updateNav, {passive:true});
+  window.addEventListener('scroll', updateNav, { passive: true });
   updateNav();
 
-  document.querySelectorAll('a[href^="#"]').forEach((link) => {
-    link.addEventListener('click', (event) => {
-      const target = document.querySelector(link.getAttribute('href'));
-      if (!target) return;
-      event.preventDefault();
-      target.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
-    });
+  // Delegated anchor navigation: works for links added after init and can
+  // never duplicate listeners on re-initialization.
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest?.('a[href^="#"]');
+    if (!link) return;
+    const href = link.getAttribute('href');
+    if (!href || href === '#') return;
+    const target = document.querySelector(href);
+    if (!target) return;
+    event.preventDefault();
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' });
+    // Menu links also close the mobile menu (replaces per-link listeners).
+    if (link.closest('#mobile-menu')) setMenu(false);
   });
-
-  // The old page referenced #reviews and #contact before those sections existed in the first viewport.
-  // They now resolve to real sections and use native anchors.
 }
+

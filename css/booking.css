@@ -296,3 +296,16 @@
 .booking-status{position:sticky;top:0;z-index:3}
 .seat{font-family:'Bebas Neue',sans-serif}
 .theater-card button{font-family:'Bebas Neue',sans-serif}
+
+/* ===== PHASE 5: production hardening ===== */
+/* Taken seats: strikethrough — state is never conveyed by color alone
+   (screen readers get the state via aria-label/aria-pressed instead). */
+.seat.taken{text-decoration:line-through;text-decoration-thickness:1px;}
+/* Recovery + reconciliation controls (unfinished booking / status polling). */
+.recovery-btn{background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.4);color:var(--gold);font-family:'Rajdhani',sans-serif;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;padding:4px 10px;margin-left:6px;cursor:pointer;transition:background 0.2s;font-weight:600;}
+.recovery-btn:hover{background:rgba(201,168,76,0.2);}
+.recovery-btn:focus-visible{outline:2px solid var(--gold-light);outline-offset:2px;}
+#payment-check,#booking-recovery{display:flex;flex-wrap:wrap;align-items:center;gap:4px;}
+/* Keyboard-reachable auth tabs (div-based in the reference markup). */
+.auth-tab:focus-visible{outline:2px solid var(--gold-light);outline-offset:2px;}
+

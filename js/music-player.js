@@ -27,6 +27,8 @@ export function initMusicPlayer() {
   const list=document.getElementById('tracklist');
   const play=document.getElementById('btn-play');
   if (!audio || !list || !play) return;
+  if (audio.dataset.init === '1') return; // idempotent re-init (no duplicate tracks/listeners)
+  audio.dataset.init = '1';
 
   let index=0, shuffle=false, repeat=false, playing=false;
   // 52 randomised bars animated by the barPulse keyframes (same as the reference design).

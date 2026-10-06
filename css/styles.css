@@ -165,25 +165,8 @@ a.s-badge:hover{border-color:rgba(201,168,76,0.6);color:var(--gold-light);backgr
 @keyframes ringPulse{0%,100%{opacity:.28;transform:scale(1)}50%{opacity:.1;transform:scale(1.12)}}
 @keyframes mbounce{0%,100%{height:5px}50%{height:16px}}
 @keyframes barPulse{0%,100%{height:var(--min)}50%{height:var(--max)}}
-@media(max-width:900px){
-  section{padding:70px 28px;}#gallery{padding:70px 28px;}nav{padding:16px 24px;}
-  .nav-links{display:none;}.hamburger{display:flex;}
-  .about-grid{grid-template-columns:1fr;}.fact-grid{grid-template-columns:repeat(2,1fr);}
-  .locations-grid{grid-template-columns:1fr 1fr;}.crew-list{grid-template-columns:1fr;}
-  .crew-item:nth-child(odd){border-right:none;}
-  .gallery-grid{grid-template-columns:1fr 1fr;gap:3px;}
-  .g-item:nth-child(n){grid-column:span 1;grid-row:span 1;}.g-item:nth-child(1){grid-column:span 2;}
-  .cast-grid{grid-template-columns:repeat(2,1fr);}
-  .bb-header{padding:18px 24px 14px;}.bb-viz{padding:14px 24px 8px;}
-  .bb-nowplaying{padding:6px 24px 14px;}.bb-progress{padding:0 24px;}
-  .bb-controls{padding:12px 24px 16px;gap:14px;}.bb-vol{padding:0 24px 18px;}
-  .bb-tracklist .track{padding:12px 24px;}
-  footer{padding:44px 28px 28px;}.footer-bottom{flex-direction:column;gap:8px;}
-  .tab-btn{padding:12px 18px;font-size:12px;}
-}
-@media(max-width:600px){
-  .locations-grid{grid-template-columns:1fr;}.cast-grid{grid-template-columns:1fr 1fr;}.play-btn{width:54px;height:54px;}
-}
+/* Responsive overrides live exclusively in css/responsive.css (loaded last);
+   the duplicate @media blocks that used to sit here were removed in Phase 5. */
 
 /* Performance + accessibility refinements */
 html{scroll-behavior:smooth}
@@ -221,3 +204,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,.t
 .modal-open{overflow:hidden}
 /* The hero background clip keeps looping for every motion preference, exactly
    like dhurandhar(8).html; visitors control its soundtrack with the mute button. */
+
+/* ===== PHASE 5: toast notifications (accessible, capped, dismissible) ===== */
+.toast-root{position:fixed;right:16px;bottom:16px;z-index:1200;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100vw - 32px));pointer-events:none;}
+.toast{pointer-events:auto;background:#0f0c07;border:1px solid rgba(201,168,76,.35);border-left:3px solid var(--gold);color:var(--bone);font-family:'Rajdhani',sans-serif;font-size:13px;letter-spacing:.03em;padding:11px 14px;box-shadow:0 12px 40px rgba(0,0,0,.7);cursor:pointer;animation:toastIn .25s ease;opacity:1;transition:opacity .25s,transform .25s;}
+.toast-error{border-left-color:#e07070;}
+.toast-success{border-left-color:#6fc76f;}
+.toast-out{opacity:0;transform:translateY(6px);}
+@keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media(max-width:600px){.toast-root{left:16px;right:16px;align-items:stretch;}}
+
