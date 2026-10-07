@@ -2,7 +2,7 @@
 // No other module calls fetch() directly (single door into the network).
 // Auth headers are attached automatically from the session store.
 
-import { get, patch, post } from './core/api-client.js';
+import { get, patch, post, request } from './core/api-client.js';
 
 // -- catalog (cities / dates / theaters / shows / seats) --------------------
 export const fetchCities = (options) => get('/cities', options);
@@ -40,8 +40,13 @@ export const fetchPaymentStatus = (reference, options) =>
   get(`/payments/status/${encodeURIComponent(reference)}`, options);
 
 // -- content & forms --------------------------------------------------------
-export const fetchReviews = (options) => get('/reviews', options);
+export const fetchReviews = (params, options) => {
+  const q = params ? '?' + new URLSearchParams(params).toString() : '';
+  return get(`/reviews${q}`, options);
+};
 export const submitReview = (payload) => post('/reviews', payload);
+export const updateReview = (id, payload) => patch(`/reviews/${encodeURIComponent(id)}`, payload);
+export const deleteReview = (id) => request(`/reviews/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export const likeReviewRequest = (id) => post(`/reviews/${encodeURIComponent(id)}/like`);
 export const subscribeNewsletter = (payload) => post('/newsletter', payload);
 export const submitContact = (payload) => post('/contact', payload);

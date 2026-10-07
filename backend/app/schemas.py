@@ -159,8 +159,8 @@ class ReviewCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     movie_id: int | None = Field(default=None, ge=1)
     rating: int = Field(ge=1, le=10)
-    title: str = Field(min_length=2, max_length=160)
-    body: str = Field(min_length=2, max_length=3000)
+    title: str = Field(min_length=1, max_length=160)
+    body: str = Field(min_length=1, max_length=3000)
     spoiler: bool = False
 
     @field_validator("title", "body", mode="before")
@@ -175,8 +175,8 @@ class ReviewCreate(BaseModel):
 class ReviewUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     rating: int | None = Field(default=None, ge=1, le=10)
-    title: str | None = Field(default=None, min_length=2, max_length=160)
-    body: str | None = Field(default=None, min_length=2, max_length=3000)
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    body: str | None = Field(default=None, min_length=1, max_length=3000)
     spoiler: bool | None = None
 
     @field_validator("title", "body", mode="before")

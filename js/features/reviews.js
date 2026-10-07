@@ -1,28 +1,43 @@
-// Reviews feature: load (cancellable), render (escaped), submit + like
-// (double-submit guarded). Public GET /reviews has no auth requirement.
+// Reviews feature: load (server-driven, cancellable), render (XSS-safe),
+// submit + like + edit + delete (all double-submit guarded).
+// Public GET /reviews has no auth requirement.
+// All network calls go through api.js → core/api-client.js. No raw fetch().
 
-import { fetchReviews, submitReview, likeReviewRequest } from '../api.js';
+import {
+  fetchReviews, submitReview, updateReview, deleteReview, likeReviewRequest,
+} from '../api.js';
 import { friendlyMessage } from '../core/errors.js';
 import { getSession } from '../core/state.js';
 import { registerActions } from '../ui/actions.js';
 import { $ } from '../ui/dom.js';
 import { runExclusive, isBusy } from '../ui/loading.js';
+import { openModal, closeModal } from '../ui/modal.js';
 import { toast } from '../ui/notifications.js';
 
-const REVIEWS_PER_PAGE = 5;
-
-let allReviews = [];
-let reviewPage = 0;
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let currentPage = 1;
+const PAGE_SIZE = 10;
+let currentSort = 'newest';
+let hasMore = false;
 let loadRequestId = 0;
 let initDone = false;
+let editingReviewId = null;
 
 /** Sign-in hook: features/auth.js owns the modal; resolve it lazily. */
 let requireSignIn = () => {};
 export function setRequireSignIn(fn) { requireSignIn = fn; }
 
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
 function formatDate(iso) {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function getReviewMovieId() {
@@ -30,20 +45,35 @@ function getReviewMovieId() {
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
-export async function loadReviews() {
+function currentUserId() {
+  const session = getSession();
+  return session && session.user && session.user.id ? session.user.id : null;
+}
+
+// ---------------------------------------------------------------------------
+// Server-driven loading
+// ---------------------------------------------------------------------------
+
+export async function loadReviews(page = 1, sort = currentSort) {
   const list = $('reviews-list');
   if (!list) return;
+
   const requestId = ++loadRequestId;
+  currentPage = page;
+  currentSort = sort;
+
   try {
-    const payload = await fetchReviews();
+    const payload = await fetchReviews({ page, limit: PAGE_SIZE, sort });
+    if (requestId !== loadRequestId) return; // stale — a newer request is running
+
+    hasMore = Boolean(payload && payload.has_more);
+    const items = (payload && Array.isArray(payload.items)) ? payload.items : [];
+    const total = (payload && payload.total) || 0;
+    const avgRating = (payload && payload.average_rating) || 0;
+
+    renderReviews(items, total, avgRating, page);
+  } catch (err) {
     if (requestId !== loadRequestId) return;
-    const items = Array.isArray(payload) ? payload : (payload && Array.isArray(payload.items) ? payload.items : []);
-    allReviews = items.filter((review) => review && typeof review === 'object');
-    reviewPage = 0;
-    renderReviews();
-  } catch {
-    if (requestId !== loadRequestId) return;
-    allReviews = [];
     list.replaceChildren();
     const msg = document.createElement('div');
     msg.className = 'async-state error';
@@ -52,102 +82,169 @@ export async function loadReviews() {
   }
 }
 
-function renderReviews() {
+// ---------------------------------------------------------------------------
+// Rendering (all text set via textContent — never innerHTML)
+// ---------------------------------------------------------------------------
+
+function renderReviews(items, total, avgRating, page) {
   const list = $('reviews-list');
   if (!list) return;
-  const loadMore = $('load-more-reviews');
-  if (!allReviews.length) {
+
+  const loadMoreBtn = $('load-more-reviews');
+  if (!items.length && page === 1) {
     const empty = document.createElement('div');
     empty.className = 'async-state';
     empty.textContent = 'No reviews yet — be the first!';
     list.replaceChildren(empty);
-    if (loadMore) loadMore.style.display = 'none';
+    if (loadMoreBtn) loadMoreBtn.style.display = 'none';
     return;
   }
 
-  const totalRating = allReviews.reduce((sum, r) => sum + Number(r.rating || 0), 0);
-  const avg = (totalRating / allReviews.length).toFixed(1);
+  // Summary bar
   const summary = document.createElement('div');
   summary.className = 'review-summary';
 
-  const avgValue = document.createElement('div');
-  avgValue.className = 'rs-avg';
-  avgValue.textContent = avg;
+  if (avgRating && total) {
+    const avgEl = document.createElement('div');
+    avgEl.className = 'rs-avg';
+    avgEl.textContent = Number(avgRating).toFixed(1);
 
-  const countValue = document.createElement('div');
-  countValue.className = 'rs-count';
-  countValue.textContent = `${allReviews.length} USER REVIEW${allReviews.length !== 1 ? 'S' : ''}`;
-  summary.append(avgValue, countValue);
+    const countEl = document.createElement('div');
+    countEl.className = 'rs-count';
+    countEl.textContent = `${total} USER REVIEW${total !== 1 ? 'S' : ''}`;
+    summary.append(avgEl, countEl);
+  }
 
-  const visibleReviews = allReviews.slice(0, (reviewPage + 1) * REVIEWS_PER_PAGE);
-  const cards = visibleReviews.map((review) => {
-    const article = document.createElement('article');
-    article.className = 'review-card';
+  const uid = currentUserId();
+  const cards = items.map((review) => buildReviewCard(review, uid));
 
-    const head = document.createElement('div');
-    head.className = 'review-head';
+  if (page === 1) {
+    list.replaceChildren(summary, ...cards);
+  } else {
+    // Append additional page cards; update/replace summary
+    const existing = list.querySelector('.review-summary');
+    if (existing) list.replaceChild(summary, existing);
+    cards.forEach((c) => list.appendChild(c));
+  }
 
-    const who = document.createElement('span');
-    who.className = 'review-who';
-    const name = document.createElement('strong');
-    name.textContent = review.name || 'Anonymous';
-    who.appendChild(name);
-
-    if (review.title) {
-      const title = document.createElement('span');
-      title.className = 'review-title';
-      title.textContent = review.title;
-      who.appendChild(title);
-    }
-
-    const rating = document.createElement('span');
-    rating.className = 'review-rating';
-    rating.textContent = `${Number(review.rating) || 0}`;
-    const outOf = document.createElement('span');
-    outOf.className = 'review-outof';
-    outOf.textContent = '/10';
-    rating.appendChild(outOf);
-
-    head.appendChild(who);
-    head.appendChild(rating);
-
-    const meta = document.createElement('div');
-    meta.className = 'review-meta';
-    meta.textContent = formatDate(review.created_at);
-
-    const body = document.createElement('p');
-    body.className = 'review-body';
-    if (Boolean(review.spoiler)) {
-      const spoilerBadge = document.createElement('div');
-      spoilerBadge.className = 'spoiler-badge';
-      spoilerBadge.textContent = '⚠ SPOILER WARNING';
-      article.appendChild(spoilerBadge);
-      body.classList.add('spoiler');
-      body.setAttribute('aria-label', 'Spoiler content hidden until revealed');
-      body.setAttribute('data-spoiler', 'true');
-    }
-    body.textContent = review.body || '';
-
-    const actions = document.createElement('button');
-    actions.type = 'button';
-    actions.className = 'review-like';
-    actions.dataset.action = 'like-review';
-    actions.dataset.reviewId = String(Number(review.id) || 0);
-    actions.setAttribute('aria-label', 'Like this review');
-    actions.textContent = `❤ ${Number(review.likes) || 0}`;
-    if (Boolean(review.liked)) actions.classList.add('liked');
-
-    article.append(head, meta, body, actions);
-    return article;
-  });
-
-  list.replaceChildren(summary, ...cards);
-  if (loadMore) {
-    loadMore.style.display = allReviews.length > (reviewPage + 1) * REVIEWS_PER_PAGE ? 'inline-block' : 'none';
+  if (loadMoreBtn) {
+    loadMoreBtn.style.display = hasMore ? 'inline-block' : 'none';
   }
 }
 
-function loadMoreReviews() { reviewPage++; renderReviews(); }
+function buildReviewCard(review, uid) {
+  const article = document.createElement('article');
+  article.className = 'review-card';
+  article.dataset.reviewId = String(review.id);
+
+  // Head row
+  const head = document.createElement('div');
+  head.className = 'review-head';
+
+  const who = document.createElement('span');
+  who.className = 'review-who';
+  const name = document.createElement('strong');
+  name.textContent = review.name || 'Anonymous';
+  who.appendChild(name);
+
+  if (review.title) {
+    const titleEl = document.createElement('span');
+    titleEl.className = 'review-title';
+    titleEl.textContent = review.title;
+    who.appendChild(titleEl);
+  }
+
+  const rating = document.createElement('span');
+  rating.className = 'review-rating';
+  rating.textContent = String(Number(review.rating) || 0);
+  const outOf = document.createElement('span');
+  outOf.className = 'review-outof';
+  outOf.textContent = '/10';
+  rating.appendChild(outOf);
+
+  head.append(who, rating);
+
+  // Meta
+  const meta = document.createElement('div');
+  meta.className = 'review-meta';
+  meta.textContent = formatDate(review.created_at);
+
+  // Body / spoiler
+  const body = document.createElement('p');
+  body.className = 'review-body';
+
+  if (Boolean(review.spoiler)) {
+    const spoilerWrap = document.createElement('div');
+    spoilerWrap.className = 'spoiler-wrap';
+
+    const spoilerBadge = document.createElement('div');
+    spoilerBadge.className = 'spoiler-badge';
+    spoilerBadge.textContent = '⚠ SPOILER WARNING';
+
+    const revealBtn = document.createElement('button');
+    revealBtn.type = 'button';
+    revealBtn.className = 'spoiler-reveal-btn';
+    revealBtn.dataset.action = 'toggle-spoiler';
+    revealBtn.dataset.reviewId = String(review.id);
+    revealBtn.setAttribute('aria-expanded', 'false');
+    revealBtn.textContent = 'Reveal spoiler';
+
+    body.classList.add('spoiler-hidden');
+    body.setAttribute('aria-hidden', 'true');
+    body.textContent = review.body || '';
+
+    spoilerWrap.append(spoilerBadge, revealBtn, body);
+    article.append(head, meta, spoilerWrap);
+  } else {
+    body.textContent = review.body || '';
+    article.append(head, meta, body);
+  }
+
+  // Actions row
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'review-actions';
+
+  const likeBtn = document.createElement('button');
+  likeBtn.type = 'button';
+  likeBtn.className = 'review-like';
+  likeBtn.dataset.action = 'like-review';
+  likeBtn.dataset.reviewId = String(review.id);
+  likeBtn.setAttribute('aria-label', `Like this review (${Number(review.likes) || 0} likes)`);
+  likeBtn.textContent = `❤ ${Number(review.likes) || 0}`;
+  if (Boolean(review.liked)) likeBtn.classList.add('liked');
+  actionsRow.appendChild(likeBtn);
+
+  // Owner controls (trust backend for authorization; show based on session user id)
+  if (uid && review.user_id === uid) {
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'review-edit-btn';
+    editBtn.dataset.action = 'edit-review';
+    editBtn.dataset.reviewId = String(review.id);
+    editBtn.textContent = 'Edit';
+    actionsRow.appendChild(editBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'review-delete-btn';
+    delBtn.dataset.action = 'delete-review';
+    delBtn.dataset.reviewId = String(review.id);
+    delBtn.textContent = 'Delete';
+    actionsRow.appendChild(delBtn);
+  }
+
+  article.appendChild(actionsRow);
+  return article;
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+function loadMoreReviews() {
+  if (!hasMore) return;
+  loadReviews(currentPage + 1, currentSort);
+}
 
 async function likeReview(id, button) {
   if (!getSession().token) { requireSignIn(); return; }
@@ -156,45 +253,176 @@ async function likeReview(id, button) {
   try {
     const data = await likeReviewRequest(Number(id));
     button.textContent = `❤ ${Number(data.likes) || 0}`;
+    button.setAttribute('aria-label', `Like this review (${Number(data.likes) || 0} likes)`);
     button.classList.toggle('liked', Boolean(data.liked));
-  } catch {}
-  finally { button.removeAttribute('data-busy'); }
+  } catch { /* silently ignore — could show toast */ } finally {
+    button.removeAttribute('data-busy');
+  }
+}
+
+function toggleSpoiler(id, button) {
+  const card = button.closest('[data-review-id]');
+  if (!card) return;
+  const bodyEl = card.querySelector('.review-body');
+  if (!bodyEl) return;
+  const expanded = button.getAttribute('aria-expanded') === 'true';
+  if (expanded) {
+    bodyEl.classList.add('spoiler-hidden');
+    bodyEl.setAttribute('aria-hidden', 'true');
+    button.setAttribute('aria-expanded', 'false');
+    button.textContent = 'Reveal spoiler';
+  } else {
+    bodyEl.classList.remove('spoiler-hidden');
+    bodyEl.setAttribute('aria-hidden', 'false');
+    button.setAttribute('aria-expanded', 'true');
+    button.textContent = 'Hide spoiler';
+  }
+}
+
+function openEditModal(id) {
+  const card = document.querySelector(`[data-review-id="${id}"]`);
+  if (!card) return;
+  const titleEl = card.querySelector('.review-title');
+  const ratingEl = card.querySelector('.review-rating');
+  const bodyEl = card.querySelector('.review-body');
+
+  // Populate form
+  const ratingInput = $('r-rating');
+  const titleInput = $('r-title');
+  const bodyInput = $('r-body');
+  const spoilerInput = $('r-spoiler');
+  if (ratingInput) ratingInput.value = ratingEl ? ratingEl.textContent.replace('/10', '').trim() : '';
+  if (titleInput) titleInput.value = titleEl ? titleEl.textContent : '';
+  if (bodyInput) bodyInput.value = bodyEl ? bodyEl.textContent : '';
+  if (spoilerInput) spoilerInput.checked = card.querySelector('.spoiler-badge') !== null;
+
+  editingReviewId = id;
+
+  // Switch submit button label if possible
+  const submitBtn = document.querySelector('[data-action="submit-review"]');
+  if (submitBtn) submitBtn.textContent = 'Save changes';
+
+  // Scroll to form
+  const form = document.querySelector('.review-form, #review-form');
+  if (form) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cancelEdit() {
+  editingReviewId = null;
+  const submitBtn = document.querySelector('[data-action="submit-review"]');
+  if (submitBtn) submitBtn.textContent = 'Post review';
+  const errBox = $('r-err');
+  if (errBox) errBox.style.display = 'none';
+}
+
+async function deleteReviewAction(id, button) {
+  if (!getSession().token) { requireSignIn(); return; }
+  if (isBusy(button)) return;
+
+  // Accessible confirmation using a prompt-style approach
+  // Use the existing modal if available, otherwise fallback to a simple confirm
+  const confirmEl = $('confirm-modal');
+  let confirmed = false;
+  if (confirmEl) {
+    confirmed = await new Promise((resolve) => {
+      const msg = confirmEl.querySelector('.confirm-msg');
+      if (msg) msg.textContent = 'Delete this review? This cannot be undone.';
+      const okBtn = confirmEl.querySelector('[data-action="confirm-ok"]');
+      const cancelBtn = confirmEl.querySelector('[data-action="confirm-cancel"]');
+      const onOk = () => { cleanup(); resolve(true); };
+      const onCancel = () => { cleanup(); resolve(false); };
+      const cleanup = () => {
+        okBtn && okBtn.removeEventListener('click', onOk);
+        cancelBtn && cancelBtn.removeEventListener('click', onCancel);
+        closeModal(confirmEl);
+      };
+      okBtn && okBtn.addEventListener('click', onOk, { once: true });
+      cancelBtn && cancelBtn.addEventListener('click', onCancel, { once: true });
+      openModal(confirmEl);
+    });
+  } else {
+    // eslint-disable-next-line no-alert
+    confirmed = window.confirm('Delete this review? This cannot be undone.');
+  }
+
+  if (!confirmed) return;
+
+  button.setAttribute('data-busy', '');
+  try {
+    await deleteReview(Number(id));
+    // Remove card from DOM
+    const card = document.querySelector(`[data-review-id="${id}"]`);
+    if (card) card.remove();
+    // If editing this review, cancel edit mode
+    if (editingReviewId === Number(id)) cancelEdit();
+    toast('Review deleted.', 'success');
+    // Refresh to update aggregate stats
+    await loadReviews(1, currentSort);
+  } catch (err) {
+    toast(friendlyMessage(err), 'error');
+  } finally {
+    button.removeAttribute('data-busy');
+  }
 }
 
 async function submitReviewForm() {
   if (!getSession().token) { requireSignIn(); return; }
-  const rating = Number($('r-rating').value);
-  const title = $('r-title').value.trim();
-  const body = $('r-body').value.trim();
+  const ratingInput = $('r-rating');
+  const titleInput = $('r-title');
+  const bodyInput = $('r-body');
+  const spoilerInput = $('r-spoiler');
   const errBox = $('r-err');
-  if (rating < 1 || rating > 10 || title.length < 2 || body.length < 2) {
-    errBox.textContent = 'Please provide a rating, title and review.';
-    errBox.style.display = 'block';
+
+  const rating = Number(ratingInput ? ratingInput.value : 0);
+  const title = titleInput ? titleInput.value.trim() : '';
+  const body = bodyInput ? bodyInput.value.trim() : '';
+  const spoiler = Boolean(spoilerInput && spoilerInput.checked);
+
+  if (rating < 1 || rating > 10 || title.length < 1 || body.length < 1) {
+    if (errBox) {
+      errBox.textContent = 'Please provide a rating (1–10), a title, and a review body.';
+      errBox.style.display = 'block';
+    }
     return;
   }
+
   const btn = document.querySelector('[data-action="submit-review"]');
-  await runExclusive(btn, 'Posting…', async () => {
+  await runExclusive(btn, editingReviewId ? 'Saving…' : 'Posting…', async () => {
     try {
-      await submitReview({
-        movie_id: getReviewMovieId(),
-        rating,
-        title,
-        body,
-        spoiler: $('r-spoiler').checked,
-      });
-      errBox.style.display = 'none';
-      $('r-title').value = '';
-      $('r-body').value = '';
-      $('r-rating').value = '';
-      $('r-spoiler').checked = false;
-      toast('Review posted.', 'success');
-      await loadReviews();
+      if (editingReviewId) {
+        // PATCH existing review
+        await updateReview(editingReviewId, { rating, title, body, spoiler });
+        cancelEdit();
+        toast('Review updated.', 'success');
+      } else {
+        // POST new review
+        await submitReview({
+          movie_id: getReviewMovieId(),
+          rating,
+          title,
+          body,
+          spoiler,
+        });
+        toast('Review posted.', 'success');
+      }
+      if (errBox) errBox.style.display = 'none';
+      if (ratingInput) ratingInput.value = '';
+      if (titleInput) titleInput.value = '';
+      if (bodyInput) bodyInput.value = '';
+      if (spoilerInput) spoilerInput.checked = false;
+      await loadReviews(1, currentSort);
     } catch (error) {
-      errBox.textContent = friendlyMessage(error);
-      errBox.style.display = 'block';
+      if (errBox) {
+        errBox.textContent = friendlyMessage(error);
+        errBox.style.display = 'block';
+      }
     }
   });
 }
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
 
 export function initReviews() {
   if (initDone) return;
@@ -202,7 +430,11 @@ export function initReviews() {
   registerActions({
     'load-more-reviews': loadMoreReviews,
     'like-review': (event, target) => likeReview(target.dataset.reviewId, target),
+    'toggle-spoiler': (event, target) => toggleSpoiler(target.dataset.reviewId, target),
+    'edit-review': (event, target) => openEditModal(Number(target.dataset.reviewId)),
+    'delete-review': (event, target) => deleteReviewAction(Number(target.dataset.reviewId), target),
     'submit-review': submitReviewForm,
+    'cancel-edit-review': cancelEdit,
   });
-  loadReviews();
+  loadReviews(1, 'newest');
 }

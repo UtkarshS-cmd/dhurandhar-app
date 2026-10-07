@@ -138,6 +138,9 @@ def client():
     db = TestingSessionLocal()
     try:
         show_id = seed_minimal_show(db)
+        # Resolve movie_id from the seeded show so review tests use the correct ID.
+        show = db.get(Show, show_id)
+        movie_id = show.movie_id
     finally:
         db.close()
 
@@ -153,6 +156,7 @@ def client():
     try:
         with TestClient(app) as test_client:
             test_client.show_id = show_id
+            test_client.movie_id = movie_id
             yield test_client
     finally:
         app.dependency_overrides.clear()

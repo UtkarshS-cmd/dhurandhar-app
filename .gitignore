@@ -14,3 +14,10 @@ backend/*.db
 *.sqlite3
 backend/.env
 .env
+*.bak
+_dbex*.py
+_editor_test.txt
+_migrate_test/
+_full_test.txt
+backend/tests/pytest_out.txt
+backend/test_output.txt

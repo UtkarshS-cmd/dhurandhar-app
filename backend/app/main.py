@@ -58,7 +58,7 @@ if settings.cors_origins:
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
     )
 
@@ -629,6 +629,37 @@ def create_review(payload: ReviewCreate, db: Session = Depends(get_db), user: Us
         raise
     db.refresh(review)
     return {"id": review.id, "message": "Review created"}
+
+
+@app.get("/api/reviews/{review_id}")
+def get_review(review_id: int, db: Session = Depends(get_db), user: User | None = Depends(optional_current_user)):
+    row = db.execute(
+        select(Review, User, func.coalesce(func.count(ReviewLike.id), 0).label("like_count"))
+        .join(User, Review.user_id == User.id)
+        .outerjoin(ReviewLike, ReviewLike.review_id == Review.id)
+        .where(Review.id == review_id)
+        .group_by(Review.id, User.id)
+    ).first()
+    if not row:
+        raise HTTPException(404, "Review not found")
+    review, reviewer, like_count = row
+    liked_ids = set()
+    if user is not None:
+        liked_ids = set(db.scalars(
+            select(ReviewLike.review_id).where(ReviewLike.user_id == user.id, ReviewLike.review_id == review_id)
+        ).all())
+    return {
+        "id": review.id,
+        "name": reviewer.full_name,
+        "rating": review.rating,
+        "title": review.title,
+        "body": review.body,
+        "spoiler": review.spoiler,
+        "likes": int(like_count),
+        "liked": user is not None and review.id in liked_ids,
+        "created_at": review.created_at.isoformat(),
+        "updated_at": review.updated_at.isoformat() if review.updated_at else None,
+    }
 
 
 @app.patch("/api/reviews/{review_id}", dependencies=[Depends(rate_limit("review_update_delete"))])
