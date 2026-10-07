@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, or_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from .config import settings, ROOT
@@ -571,6 +572,7 @@ def reviews(
     for review, reviewer, like_count in rows:
         items.append({
             "id": review.id,
+            "user_id": review.user_id,
             "name": reviewer.full_name,
             "rating": review.rating,
             "title": review.title,
@@ -606,10 +608,17 @@ def like_review(review_id: int, db: Session = Depends(get_db), user: User = Depe
             db.add(ReviewLike(review_id=review_id, user_id=user.id))
             db.flush()
             liked = True
-        except Exception:
+        except IntegrityError:
+            # Expected race: a concurrent request inserted the same
+            # (review_id, user_id) row between our SELECT and INSERT.
+            # Recover by observing the committed state — any integrity
+            # failure that did NOT leave our like row present is re-raised,
+            # so unexpected DB errors are never masked as a successful like.
             db.rollback()
             existing = db.scalar(select(ReviewLike).where(ReviewLike.review_id == review_id, ReviewLike.user_id == user.id))
-            liked = bool(existing is not None)
+            if existing is None:
+                raise
+            liked = True
     db.commit()
     count = db.scalar(select(func.count()).select_from(ReviewLike).where(ReviewLike.review_id == review_id)) or 0
     return {"likes": count, "liked": liked}
@@ -622,11 +631,17 @@ def create_review(payload: ReviewCreate, db: Session = Depends(get_db), user: Us
     db.add(review)
     try:
         db.commit()
-    except Exception as exc:
+    except IntegrityError:
+        # Only the (user_id, movie_id) duplicate becomes 409; verify the
+        # duplicate row actually exists so every other integrity failure
+        # surfaces as-is instead of being disguised as "already reviewed".
         db.rollback()
-        if "uq_review_user_movie" in str(exc) or "UNIQUE constraint failed" in str(exc):
-            raise HTTPException(409, "You have already reviewed this movie")
-        raise
+        duplicate = db.scalar(
+            select(Review.id).where(Review.user_id == user.id, Review.movie_id == payload.movie_id)
+        )
+        if duplicate is None:
+            raise
+        raise HTTPException(409, "You have already reviewed this movie")
     db.refresh(review)
     return {"id": review.id, "message": "Review created"}
 
@@ -650,6 +665,7 @@ def get_review(review_id: int, db: Session = Depends(get_db), user: User | None 
         ).all())
     return {
         "id": review.id,
+        "user_id": review.user_id,
         "name": reviewer.full_name,
         "rating": review.rating,
         "title": review.title,

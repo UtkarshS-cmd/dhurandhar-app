@@ -7,7 +7,7 @@ import {
   fetchReviews, submitReview, updateReview, deleteReview, likeReviewRequest,
 } from '../api.js';
 import { friendlyMessage } from '../core/errors.js';
-import { getSession } from '../core/state.js';
+import { getSession, onSessionChange } from '../core/state.js';
 import { registerActions } from '../ui/actions.js';
 import { $ } from '../ui/dom.js';
 import { runExclusive, isBusy } from '../ui/loading.js';
@@ -435,6 +435,17 @@ export function initReviews() {
     'delete-review': (event, target) => deleteReviewAction(Number(target.dataset.reviewId), target),
     'submit-review': submitReviewForm,
     'cancel-edit-review': cancelEdit,
+  });
+  // Re-render when the signed-in user changes: owner controls (Edit/Delete)
+  // and per-user like state depend on session identity, and this list may
+  // have been fetched before sign-in (or after sign-out). The initDone guard
+  // above keeps this listener registered exactly once.
+  let renderedUserId = currentUserId();
+  onSessionChange(() => {
+    const uid = currentUserId();
+    if (uid === renderedUserId) return;
+    renderedUserId = uid;
+    loadReviews(1, currentSort);
   });
   loadReviews(1, 'newest');
 }

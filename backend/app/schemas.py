@@ -157,7 +157,9 @@ class BookingOut(BaseModel):
 
 class ReviewCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    movie_id: int | None = Field(default=None, ge=1)
+    # movie_id is part of the review's verified identity (uq_review_user_movie)
+    # and is NOT NULL at the DB level — required, never defaulted to None.
+    movie_id: int = Field(ge=1)
     rating: int = Field(ge=1, le=10)
     title: str = Field(min_length=1, max_length=160)
     body: str = Field(min_length=1, max_length=3000)

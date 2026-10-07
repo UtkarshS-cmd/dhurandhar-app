@@ -11,11 +11,18 @@ fixture (same isolation as the other suites), so the developer's
 * duplicate reviews and the ``uq_review_user_movie`` unique constraint
 * request validation (rating range, empty / oversized strings, missing fields)
 * likes (single toggle, second like disables, duplicate likes do not corrupt the
-  count, nonexistent review)
+  count, concurrent-insert race recovers consistently, unexpected DB errors are
+  never masked as a successful like, nonexistent review)
 * server-driven listing (page / limit / max limit, five sorts, invalid sort,
   total / has_more / average_rating / total_reviews)
 * PII leakage and malicious content returned as plain text
+* owner identity contract: list/detail payloads carry ``user_id`` (the field
+  the frontend owner controls render against) with no other user PII, and
+  ``movie_id`` is a required, never-defaulted part of review creation
 * rate limiting on review create / update / delete / like (429 + Retry-After)
+* real Alembic runs: NOT NULL ``movie_id`` + FK + unique + indexes, valid
+  downgrade round trip, deterministic legacy backfill, and a loud failure
+  when a legacy review has no resolvable movie
 
 Backend authorization is authoritative: the frontend never trusts
 client-supplied ownership flags or user_id overrides.
@@ -23,15 +30,25 @@ client-supplied ownership flags or user_id overrides.
 
 from datetime import date, time
 
-import pytest
-from sqlalchemy import inspect
-from sqlalchemy import select
+import dataclasses
+import sqlite3
+from pathlib import Path
 
+import pytest
+from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy.orm import Session, sessionmaker
+
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
+
+import app.config as app_config
 from app.models import (
-    Booking, BookingSeat, Movie, Show, ShowSeat, ShowSeatStatus, User,
+    Booking, BookingSeat, Movie, ReviewLike, Show, ShowSeat, ShowSeatStatus, User,
 )
 from conftest import make_user as _user, silver_seat_ids as _silver_seat_ids
-from conftest import TestingSessionLocal
+from conftest import TestingSessionLocal, seed_minimal_show
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
 # ---------------------------------------------------------------------------
@@ -591,8 +608,11 @@ def test_rate_limit_review_like(client):
 def test_review_table_after_migration_has_expected_schema(client):
     with TestingSessionLocal() as db:
         inspector = inspect(db.connection())
-        columns = {c["name"] for c in inspector.get_columns("reviews")}
+        columns = {c["name"]: c for c in inspector.get_columns("reviews")}
         assert "movie_id" in columns
+        # movie_id is NOT NULL at the DB level — matches Review.movie_id:
+        # Mapped[int] (never Optional[int]).
+        assert columns["movie_id"]["nullable"] is False
         assert "updated_at" in columns
         unique = {c["name"] for c in inspector.get_unique_constraints("reviews")}
         assert "uq_review_user_movie" in unique
@@ -621,10 +641,13 @@ def test_anonymous_listing_contains_no_pii(client):
     assert response.status_code == 200
     payload = response.json()
     assert len(payload["items"]) == 1
+    # Exactly the public review contract — user_id (int) is included for the
+    # frontend owner check; no email / phone / password material ever leaks.
     assert set(payload["items"][0].keys()) == {
-        "id", "name", "rating", "title", "body", "spoiler",
+        "id", "user_id", "name", "rating", "title", "body", "spoiler",
         "likes", "liked", "created_at", "updated_at",
     }
+    assert isinstance(payload["items"][0]["user_id"], int)
     assert all("@" not in item["title"] and "@" not in item["name"] for item in payload["items"])
 
 
@@ -702,3 +725,296 @@ def test_another_user_cannot_review_owners_movie(client):
         json={"movie_id": client.movie_id, "rating": 8, "title": "x", "body": "y"},
     )
     assert blocked.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# 10. Owner identity contract (frontend owner controls depend on this)
+# ---------------------------------------------------------------------------
+
+def test_listing_and_detail_expose_user_id_for_owner_controls(client):
+    """The frontend shows Edit/Delete only when review.user_id === session
+    user id — the API must therefore publish user_id (and nothing else
+    account-related) on both the anonymous listing and the detail payload."""
+    owner, owner_body = _register(client, "owner-ui")
+    owner_token = owner_body["access_token"]
+    owner_id = owner_body["user"]["id"]
+    _hold_confirm(client, owner, client.show_id)
+    mine = _make_review(client, owner, owner_token, client.movie_id, 8, "mine", "mine body")
+    assert mine.status_code == 201, mine.text
+
+    other, other_body = _register(client, "other-ui")
+    _hold_confirm(client, other, client.show_id)
+    theirs = _make_review(
+        client, other, other_body["access_token"], client.movie_id, 6, "theirs", "their body"
+    )
+    assert theirs.status_code == 201, theirs.text
+
+    items = client.get("/api/reviews").json()["items"]
+    assert len(items) == 2
+    by_id = {item["id"]: item for item in items}
+    # Each item carries its author's id — exactly what the owner check reads.
+    assert by_id[mine.json()["id"]]["user_id"] == owner_id
+    assert by_id[theirs.json()["id"]]["user_id"] == other_body["user"]["id"]
+    for item in items:
+        assert set(item.keys()) == {
+            "id", "user_id", "name", "rating", "title", "body", "spoiler",
+            "likes", "liked", "created_at", "updated_at",
+        }
+        # No other account data rides along with user_id.
+        assert not ({"email", "phone", "password_hash", "token_version", "is_active"} & set(item.keys()))
+
+    detail = client.get(f"/api/reviews/{mine.json()['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["user_id"] == owner_id
+
+
+# ---------------------------------------------------------------------------
+# 11. Request validation: movie_id is required (never defaulted to None)
+# ---------------------------------------------------------------------------
+
+def test_create_requires_movie_id(client):
+    user, body = _register(client, "reqmovie")
+    token = body["access_token"]
+    _hold_confirm(client, user, client.show_id)
+    # Missing field → 422 (schema: movie_id: int = Field(ge=1), no default)
+    assert client.post(
+        "/api/reviews", headers=_auth(token),
+        json={"rating": 5, "title": "t", "body": "b"},
+    ).status_code == 422
+    # Explicit null → 422 (null is not an int; the column is NOT NULL)
+    assert client.post(
+        "/api/reviews", headers=_auth(token),
+        json={"movie_id": None, "rating": 5, "title": "t", "body": "b"},
+    ).status_code == 422
+    # Sanity: a valid payload still creates the review
+    ok = _make_review(client, user, token, client.movie_id, 6, "t", "b")
+    assert ok.status_code == 201, ok.text
+
+
+# ---------------------------------------------------------------------------
+# 12. Likes: concurrent-insert race + error hygiene
+# ---------------------------------------------------------------------------
+
+def test_like_race_recovers_to_a_consistent_count(client, monkeypatch):
+    user, body = _register(client, "race")
+    token = body["access_token"]
+    user_id = body["user"]["id"]
+    _hold_confirm(client, user, client.show_id)
+    review = _make_review(client, user, token, client.movie_id, 7, "x", "y")
+    assert review.status_code == 201, review.text
+    review_id = review.json()["id"]
+
+    # A concurrent request wins the INSERT race: the like row already exists.
+    with TestingSessionLocal() as s:
+        s.add(ReviewLike(review_id=review_id, user_id=user_id))
+        s.commit()
+
+    # Our request's first SELECT misses that row (stale read), so its INSERT
+    # hits uq_review_user_like — exactly the race the endpoint must absorb.
+    real_scalar = Session.scalar
+    state = {"stale_done": False}
+
+    def stale_first_like_read(self, statement=None, *args, **kwargs):
+        if (
+            not state["stale_done"]
+            and statement is not None
+            and "review_likes" in str(statement)
+        ):
+            state["stale_done"] = True
+            return None  # pretend the row isn't there yet
+        return real_scalar(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "scalar", stale_first_like_read)
+
+    raced = client.post(f"/api/reviews/{review_id}/like", headers=_auth(token))
+    assert raced.status_code == 200
+    assert raced.json() == {"likes": 1, "liked": True}
+
+    # With the stale read gone, a normal toggle sees exactly one row → off.
+    monkeypatch.undo()
+    toggled = client.post(f"/api/reviews/{review_id}/like", headers=_auth(token))
+    assert toggled.status_code == 200
+    assert toggled.json() == {"likes": 0, "liked": False}
+
+
+def test_like_does_not_mask_unexpected_db_errors(client, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    user, body = _register(client, "likeerr")
+    token = body["access_token"]
+    _hold_confirm(client, user, client.show_id)
+    review = _make_review(client, user, token, client.movie_id, 7, "x", "y")
+    assert review.status_code == 201, review.text
+    review_id = review.json()["id"]
+
+    def explode(self, *args, **kwargs):
+        raise OperationalError(
+            "INSERT INTO review_likes", {}, Exception("disk I/O error")
+        )
+
+    monkeypatch.setattr(Session, "flush", explode)
+    # The handler only absorbs the unique-race IntegrityError; any other
+    # database failure surfaces instead of masquerading as a successful like.
+    with pytest.raises(OperationalError):
+        client.post(f"/api/reviews/{review_id}/like", headers=_auth(token))
+
+
+# ---------------------------------------------------------------------------
+# 13. Real Alembic migration runs (fresh temp DBs — never the dev database)
+# ---------------------------------------------------------------------------
+
+def _alembic_config(db_path, monkeypatch):
+    """Point Alembic's env.py at ``db_path``.
+
+    ``alembic/env.py`` reads ``app.config.settings.database_url``; Settings is
+    frozen, so swap the module attribute with a patched copy for the test.
+    """
+    monkeypatch.setattr(
+        app_config,
+        "settings",
+        dataclasses.replace(
+            app_config.settings, database_url=f"sqlite:///{db_path.as_posix()}"
+        ),
+    )
+    return AlembicConfig(str(BACKEND_DIR / "alembic.ini"))
+
+
+def _reviews_schema(db_path):
+    """Schema snapshot straight from SQLite (no reflection caches involved)."""
+    con = sqlite3.connect(db_path)
+    try:
+        columns = {
+            row[1]: {"notnull": row[3]}
+            for row in con.execute("PRAGMA table_info(reviews)")
+        }
+        ddl_row = con.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='reviews'"
+        ).fetchone()
+        indexes = {row[1] for row in con.execute("PRAGMA index_list(reviews)")}
+        fks = con.execute("PRAGMA foreign_key_list(reviews)").fetchall()
+        null_movies = (
+            con.execute("SELECT COUNT(*) FROM reviews WHERE movie_id IS NULL").fetchone()[0]
+            if "movie_id" in columns
+            else None
+        )
+        return {
+            "columns": columns,
+            "ddl": ddl_row[0] if ddl_row else "",
+            "indexes": indexes,
+            "fks": fks,
+            "null_movies": null_movies,
+        }
+    finally:
+        con.close()
+
+
+def _insert_legacy_review(db_path, *, with_confirmed_booking):
+    """A review that predates ``movie_id`` on the a1d8f6b9c2e1 schema.
+
+    Returns the movie the backfill should resolve to (or None).
+    """
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with session_factory() as db:
+        user = User(
+            full_name="Legacy Reviewer",
+            email=f"legacy-{db_path.stem}@example.com",
+            phone="9876543210",
+            password_hash="not-a-real-hash",
+        )
+        db.add(user)
+        db.flush()
+        movie_id = None
+        if with_confirmed_booking:
+            show_id = seed_minimal_show(db)
+            show = db.get(Show, show_id)
+            movie_id = show.movie_id
+            db.add(Booking(
+                booking_reference=f"LEGACY-{db_path.stem}"[:32],
+                user_id=user.id,
+                show_id=show_id,
+                status="CONFIRMED",
+                total_amount=500,
+                payment_method="MOCK",
+                payment_status="PAID",
+            ))
+        db.execute(
+            text(
+                "INSERT INTO reviews (user_id, rating, title, body, spoiler, created_at) "
+                "VALUES (:uid, 7, 'Legacy', 'legacy body', 0, CURRENT_TIMESTAMP)"
+            ),
+            {"uid": user.id},
+        )
+        db.commit()
+    engine.dispose()
+    return movie_id
+
+
+def test_alembic_upgrade_enforces_movie_id_contract(tmp_path, monkeypatch):
+    """Fresh-chain upgrade produces the full movie_id contract, and the
+    migration's downgrade is a valid inverse (round trip stable)."""
+    db_path = tmp_path / "mig_contract.db"
+    cfg = _alembic_config(db_path, monkeypatch)
+
+    alembic_command.upgrade(cfg, "head")
+    schema = _reviews_schema(db_path)
+    assert schema["columns"]["movie_id"]["notnull"] == 1
+    assert "updated_at" in schema["columns"]
+    assert "CONSTRAINT uq_review_user_movie UNIQUE" in schema["ddl"]
+    assert any(fk[2] == "movies" and fk[3] == "movie_id" for fk in schema["fks"])
+    assert {"ix_reviews_movie_id", "ix_reviews_movie_created_at"} <= schema["indexes"]
+    assert schema["null_movies"] == 0
+
+    # Valid downgrade: everything this migration adds is reversible...
+    alembic_command.downgrade(cfg, "a1d8f6b9c2e1")
+    down = _reviews_schema(db_path)
+    assert "movie_id" not in down["columns"]
+    assert "updated_at" not in down["columns"]
+
+    # ...and re-upgrading reproduces the same contract.
+    alembic_command.upgrade(cfg, "head")
+    again = _reviews_schema(db_path)
+    assert again["columns"]["movie_id"]["notnull"] == 1
+    assert "CONSTRAINT uq_review_user_movie UNIQUE" in again["ddl"]
+    assert {"ix_reviews_movie_id", "ix_reviews_movie_created_at"} <= again["indexes"]
+
+
+def test_alembic_backfills_resolvable_legacy_review(tmp_path, monkeypatch):
+    """A legacy review whose author has exactly one confirmed-booking movie is
+    deterministically backfilled before NOT NULL is enforced."""
+    db_path = tmp_path / "legacy_backfill.db"
+    cfg = _alembic_config(db_path, monkeypatch)
+    alembic_command.upgrade(cfg, "a1d8f6b9c2e1")
+    expected_movie_id = _insert_legacy_review(db_path, with_confirmed_booking=True)
+
+    alembic_command.upgrade(cfg, "head")
+
+    schema = _reviews_schema(db_path)
+    assert schema["null_movies"] == 0
+    assert schema["columns"]["movie_id"]["notnull"] == 1
+    con = sqlite3.connect(db_path)
+    try:
+        rows = con.execute("SELECT movie_id FROM reviews").fetchall()
+    finally:
+        con.close()
+    # Deterministic: the single confirmed-booking movie of the reviewer.
+    assert [row[0] for row in rows] == [expected_movie_id]
+
+
+def test_alembic_fails_loudly_on_unresolvable_legacy_review(tmp_path, monkeypatch):
+    """A legacy review with no resolvable movie aborts the migration with a
+    clear error instead of guessing — and the run stays re-runnable."""
+    db_path = tmp_path / "legacy_fail.db"
+    cfg = _alembic_config(db_path, monkeypatch)
+    alembic_command.upgrade(cfg, "a1d8f6b9c2e1")
+    _insert_legacy_review(db_path, with_confirmed_booking=False)
+
+    with pytest.raises(RuntimeError, match="movie_id"):
+        alembic_command.upgrade(cfg, "head")
+
+    # The failure fires before the NOT NULL flip: the row is still NULL,
+    # nothing was guessed, and the guarded steps make a re-run safe.
+    schema = _reviews_schema(db_path)
+    assert "movie_id" in schema["columns"]
+    assert schema["columns"]["movie_id"]["notnull"] == 0
+    assert schema["null_movies"] == 1

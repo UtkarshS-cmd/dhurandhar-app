@@ -11,6 +11,7 @@ Every test gets a freshly created schema with a minimal seeded show via the
 ``client`` fixture, which also resets the in-process rate limiter so
 rate-limit tests stay deterministic and independent of each other.
 """
+import atexit
 import os
 import sys
 import tempfile
@@ -56,6 +57,24 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 Base.metadata.create_all(bind=engine)
+# Release the connection create_all used immediately: the client fixture
+# disposes at teardown, but a selection that never instantiates ``client``
+# (e.g. the standalone Alembic tests) would otherwise leave the pooled
+# connection open and Windows could not delete the temp dir at exit.
+engine.dispose()
+# Some suites open connections without the client fixture — including the
+# app's own engine via the default get_db — so idle pooled connections can
+# still exist after the last client teardown. Windows then refuses to delete
+# the temp dir at interpreter exit (PermissionError → pytest exit code 1).
+# atexit callbacks run before the tempfile finalizer, so disposing every
+# engine bound to the temp DB here guarantees the file is released.
+def _exit_dispose_pools():
+    from app.db import engine as app_engine
+
+    engine.dispose()
+    app_engine.dispose()
+
+atexit.register(_exit_dispose_pools)
 
 
 def seed_minimal_show(db):
