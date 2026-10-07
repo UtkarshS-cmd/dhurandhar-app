@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from .config import settings, ROOT
 from .db import get_db
+from .deps import current_user, optional_current_user, require_admin
 from .models import (
     User, Movie, City, Theater, Screen, Seat, Show, ShowSeat,
     Booking, BookingSeat, PaymentAttempt, Review, ReviewLike, NewsletterSubscriber, ContactMessage,
@@ -46,8 +47,34 @@ from .services.booking import (
 from .services.payment import payment_gateway
 from .services.payments.base import ProviderError
 from .services.payments.service import get_payment_service
+from .admin import audit_logs as admin_audit_logs
+from .admin import bookings as admin_bookings
+from .admin import dashboard as admin_dashboard
+from .admin import movies as admin_movies
+from .admin import movies_update as _admin_movies_update  # noqa: F401  (registers PATCH)
+from .admin import ops as admin_ops
+from .admin import payments as admin_payments
+from .admin import reviews as admin_reviews
+from .admin import shows as admin_shows
+from .admin import shows_create as _admin_shows_create  # noqa: F401
+from .admin import shows_detail as _admin_shows_detail  # noqa: F401
+from .admin import shows_write as _admin_shows_write  # noqa: F401
+from .admin import users as admin_users
+from .admin import venues as admin_venues
+from .admin import venues_update as _admin_venues_update  # noqa: F401
 
 app = FastAPI(title="Dhurandhar Cinema API", version="1.0.0")
+
+app.include_router(admin_dashboard.router)
+app.include_router(admin_users.router)
+app.include_router(admin_movies.router)
+app.include_router(admin_venues.router)
+app.include_router(admin_shows.router)
+app.include_router(admin_bookings.router)
+app.include_router(admin_payments.router)
+app.include_router(admin_reviews.router)
+app.include_router(admin_ops.router)
+app.include_router(admin_audit_logs.router)
 
 # CORS is environment-driven (see config._resolve_cors_origins): localhost in
 # development, explicit origins only in production, and never "*" while
@@ -111,66 +138,9 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 def cleanup_expired_holds(db: Session):
     cleanup_expired_holds_service(db)
 
-def current_user(db: Session = Depends(get_db), authorization: str | None = Header(default=None)) -> User:
-    """Resolve the authenticated user or raise a uniform 401.
-
-    Authorization boundary: every failure mode (missing header, wrong
-    scheme, malformed/expired/tampered token, token subject that no longer
-    exists in the database) returns the same bare 401 with
-    ``WWW-Authenticate: Bearer`` — no JWT internals, no database details,
-    no account-existence signals.
-    """
-    if not authorization:
-        raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"})
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
-        raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"})
-    try:
-        payload = decode_token_payload(token.strip())
-        uid = int(payload["sub"])
-    except AuthenticationError:
-        raise HTTPException(401, "Invalid or expired session", headers={"WWW-Authenticate": "Bearer"})
-    user = db.get(User, uid)
-    if not user or not user.is_active:
-        raise HTTPException(401, "Invalid or expired session", headers={"WWW-Authenticate": "Bearer"})
-    try:
-        token_version = payload.get("ver")
-        if token_version is None:
-            if user.token_version != 1:
-                raise ValueError("missing token version")
-        else:
-            if int(token_version) != user.token_version:
-                raise ValueError("token version mismatch")
-    except (TypeError, ValueError):
-        raise HTTPException(401, "Invalid or expired session", headers={"WWW-Authenticate": "Bearer"})
-    return user
-
-
-def optional_current_user(db: Session = Depends(get_db), authorization: str | None = Header(default=None)) -> User | None:
-    if not authorization:
-        return None
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
-        return None
-    try:
-        payload = decode_token_payload(token.strip())
-        uid = int(payload["sub"])
-    except AuthenticationError:
-        return None
-    user = db.get(User, uid)
-    if not user or not user.is_active:
-        return None
-    try:
-        token_version = payload.get("ver")
-        if token_version is None:
-            if user.token_version != 1:
-                return None
-        else:
-            if int(token_version) != user.token_version:
-                return None
-    except (TypeError, ValueError):
-        return None
-    return user
+# ``current_user`` / ``optional_current_user`` live in ``app.deps`` (Phase 8)
+# and are re-imported above so existing ``from app.main import ...`` imports
+# (tests, tooling) keep working.
 
 
 @app.get("/api/health")

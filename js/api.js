@@ -50,3 +50,37 @@ export const deleteReview = (id) => request(`/reviews/${encodeURIComponent(id)}`
 export const likeReviewRequest = (id) => post(`/reviews/${encodeURIComponent(id)}/like`);
 export const subscribeNewsletter = (payload) => post('/newsletter', payload);
 export const submitContact = (payload) => post('/contact', payload);
+
+// -- admin (RBAC-gated server-side; frontend role check is UX-only) --------
+const adminQuery = (path, params) => {
+  const q = params ? '?' + new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')),
+  ).toString() : '';
+  return get(`${path}${q}`);
+};
+export const adminDashboard = () => get('/admin/dashboard');
+export const adminUsers = (params) => adminQuery('/admin/users', params);
+export const adminUser = (id) => get(`/admin/users/${encodeURIComponent(id)}`);
+export const adminDeactivateUser = (id) => post(`/admin/users/${encodeURIComponent(id)}/deactivate`, {});
+export const adminActivateUser = (id) => post(`/admin/users/${encodeURIComponent(id)}/activate`, {});
+export const adminSetUserRole = (id, role) => patch(`/admin/users/${encodeURIComponent(id)}`, { role });
+export const adminMovies = (params) => adminQuery('/admin/movies', params);
+export const adminCreateMovie = (payload) => post('/admin/movies', payload);
+export const adminUpdateMovie = (id, payload) => patch(`/admin/movies/${encodeURIComponent(id)}`, payload);
+export const adminCities = () => get('/admin/cities');
+export const adminTheaters = (params) => adminQuery('/admin/theaters', params);
+export const adminCreateTheater = (payload) => post('/admin/theaters', payload);
+export const adminShows = (params) => adminQuery('/admin/shows', params);
+export const adminCreateShow = (payload) => post('/admin/shows', payload);
+export const adminUpdateShow = (id, payload) => patch(`/admin/shows/${encodeURIComponent(id)}`, payload);
+export const adminCancelShow = (id) => post(`/admin/shows/${encodeURIComponent(id)}/cancel`, {});
+export const adminBookings = (params) => adminQuery('/admin/bookings', params);
+export const adminBooking = (id) => get(`/admin/bookings/${encodeURIComponent(id)}`);
+export const adminPayments = (params) => adminQuery('/admin/payments', params);
+export const adminPaymentAttempt = (id) => get(`/admin/payment-attempts/${encodeURIComponent(id)}`);
+export const adminReviews = (params) => adminQuery('/admin/reviews', params);
+export const adminDeleteReview = (id) => request(`/admin/reviews/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const adminContacts = (params) => adminQuery('/admin/contact-messages', params);
+export const adminMarkContact = (id, isRead) => patch(`/admin/contact-messages/${encodeURIComponent(id)}`, { is_read: isRead });
+export const adminSubscribers = (params) => adminQuery('/admin/newsletter-subscribers', params);
+export const adminAuditLogs = (params) => adminQuery('/admin/audit-logs', params);

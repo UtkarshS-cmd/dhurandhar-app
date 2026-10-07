@@ -70,6 +70,9 @@ class UserOut(BaseModel):
     full_name: str
     email: EmailStr
     phone: str
+    # Server-side RBAC role (Phase 8). The frontend uses it for UX-only
+    # navigation gating; every admin endpoint re-checks the DB role.
+    role: str = "USER"
 
 class UserProfileUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")

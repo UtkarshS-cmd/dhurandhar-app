@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="css/styles.css">
 <link rel="stylesheet" href="css/booking.css">
 <link rel="stylesheet" href="css/responsive.css">
+<link rel="stylesheet" href="css/admin.css">
 <meta name="description" content="DHURANDHAR — An Aditya Dhar film. Jio Studios × B62 Studios. In cinemas 5th December 2025. Book tickets, explore the cast, gallery, music and reviews.">
 <meta name="theme-color" content="#0a0a08">
 <meta property="og:title" content="DHURANDHAR — An Aditya Dhar Film">
@@ -44,6 +45,7 @@
   </ul>
   <button type="button" class="hamburger" aria-label="Open menu" aria-expanded="false" id="hamburger"><span></span><span></span><span></span></button>
   <div style="display:flex;gap:10px;align-items:center">
+  <button id="nav-admin-btn" class="book-btn" data-admin-nav data-action="open-admin" aria-label="Open admin dashboard" style="display:none;background:rgba(201,168,76,0.18);color:var(--gold);border:1px solid rgba(201,168,76,0.4);">Admin</button>
   <button id="nav-auth-btn" class="book-btn" style="background:rgba(201,168,76,0.12);color:var(--gold);border:1px solid rgba(201,168,76,0.3);" data-action="open-auth">Sign In</button>
   <button class="book-btn" data-action="open-booking">Book Tickets</button>
 </div>
@@ -701,6 +703,17 @@
       <button type="button" data-action="close-my-bookings" style="background:none;border:none;color:rgba(201,168,76,0.4);font-size:18px;cursor:pointer;">✕</button>
     </div>
     <div id="my-bookings-list" style="padding-bottom:24px;"></div>
+  </div>
+</div>
+
+<!-- ADMIN DASHBOARD MODAL (visible only to role=ADMIN; backend enforces RBAC) -->
+<div id="admin-modal" role="dialog" aria-modal="true" aria-labelledby="admin-title" tabindex="-1">
+  <div class="admin-panel">
+    <div class="bp-header">
+      <h3 id="admin-title">ADMIN CONSOLE</h3>
+      <button type="button" data-action="close-admin" aria-label="Close admin dashboard" style="background:none;border:none;color:rgba(201,168,76,0.4);font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <div id="admin-body" class="admin-body"></div>
   </div>
 </div>
 

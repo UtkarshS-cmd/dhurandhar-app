@@ -9,6 +9,7 @@ import { initBooking } from './features/booking.js';
 import { initReviews, setRequireSignIn } from './features/reviews.js';
 import { initNewsletter } from './features/newsletter.js';
 import { initContact } from './features/contact.js';
+import { initAdmin } from './features/admin.js';
 
 function initGalleryFallback() {
   // Replaces the former inline onerror attributes on gallery images so the
@@ -36,5 +37,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initReviews();
   initNewsletter();
   initContact();
+  initAdmin();
 });
 

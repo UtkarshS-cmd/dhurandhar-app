@@ -1,0 +1,83 @@
+/* Phase 8 — Admin console modal + dashboard widgets.
+   Mirrors the profile/bookings modal pattern from booking.css. */
+
+#admin-modal {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(0, 0, 0, 0.9); backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s; padding: 16px;
+}
+#admin-modal.open { opacity: 1; pointer-events: all; }
+
+.admin-panel {
+  background: #0f0c07; border: 1px solid rgba(201, 168, 76, 0.2);
+  width: 100%; max-width: 1000px; max-height: 88vh; overflow-y: auto;
+  position: relative;
+}
+
+.admin-body { padding: 16px 24px 28px; }
+
+.admin-tabs {
+  display: flex; flex-wrap: wrap; gap: 2px;
+  border-bottom: 1px solid rgba(201, 168, 76, 0.15); margin-bottom: 12px;
+}
+.admin-tabs .tab-btn { padding: 10px 14px; font-size: 11px; }
+
+.admin-toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.admin-search {
+  flex: 1; min-width: 180px; padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(201, 168, 76, 0.2);
+  color: #e8dcc0; font-family: inherit; font-size: 13px;
+}
+.admin-search:focus { outline: none; border-color: rgba(201, 168, 76, 0.55); }
+.admin-toolbar .modal-btn-ghost { width: auto; padding: 10px 18px; font-size: 12px; }
+
+.admin-h { font-family: 'Cinzel', serif; font-size: 13px; color: #e8cc7e; margin-bottom: 10px; }
+
+.admin-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px;
+}
+.admin-card {
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(201, 168, 76, 0.15);
+  padding: 14px 16px;
+}
+.admin-card-k { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(212, 200, 168, 0.5); }
+.admin-card-v { font-family: 'Cinzel', serif; font-size: 22px; color: #e8cc7e; margin-top: 6px; word-break: break-word; }
+
+.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 14px; }
+.admin-table th {
+  text-align: left; font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: rgba(212, 200, 168, 0.55);
+  padding: 8px 10px; border-bottom: 1px solid rgba(201, 168, 76, 0.25);
+}
+.admin-table td {
+  padding: 8px 10px; border-bottom: 1px solid rgba(201, 168, 76, 0.08);
+  color: rgba(232, 220, 192, 0.9); vertical-align: middle;
+}
+.admin-table .modal-btn-ghost { width: auto; padding: 6px 12px; font-size: 11px; white-space: nowrap; }
+
+.admin-badge {
+  display: inline-block; padding: 2px 8px; font-size: 10px; letter-spacing: 0.08em;
+  text-transform: uppercase; border: 1px solid rgba(201, 168, 76, 0.35);
+  color: rgba(212, 200, 168, 0.8); white-space: nowrap;
+}
+.admin-role-row { display: flex; gap: 6px; align-items: center; }
+.admin-role {
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(201, 168, 76, 0.3);
+  color: #e8dcc0; font-family: inherit; font-size: 12px; padding: 5px 6px;
+}
+.admin-role:focus { outline: none; border-color: rgba(201, 168, 76, 0.55); }
+.admin-badge.gold { border-color: rgba(232, 204, 126, 0.7); color: #e8cc7e; }
+.admin-badge.green { border-color: rgba(110, 200, 130, 0.5); color: #8fd6a0; }
+.admin-badge.red { border-color: rgba(220, 100, 100, 0.5); color: #e08a8a; }
+
+.admin-pager { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 6px 0 4px; }
+.admin-pager .modal-btn-ghost { width: auto; padding: 8px 16px; font-size: 12px; }
+.admin-pager .modal-btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+.admin-page { font-size: 12px; color: rgba(212, 200, 168, 0.55); }
+
+@media (max-width: 700px) {
+  .admin-panel { max-height: 92vh; }
+  .admin-body { padding: 12px 14px 22px; }
+  .admin-table { display: block; overflow-x: auto; white-space: nowrap; }
+}

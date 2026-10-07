@@ -912,38 +912,59 @@ def _insert_legacy_review(db_path, *, with_confirmed_booking):
     """A review that predates ``movie_id`` on the a1d8f6b9c2e1 schema.
 
     Returns the movie the backfill should resolve to (or None).
+
+    Uses raw SQL with the *historical* column set: the ORM ``User`` model
+    now carries Phase 8 columns (``role``) that do not exist at the
+    ``a1d8f6b9c2e1`` revision the test database is stamped at. Inserting
+    via the ORM would emit those new columns and fail; explicit SQL keeps
+    the fixture faithful to the legacy schema.
     """
     engine = create_engine(f"sqlite:///{db_path.as_posix()}")
     session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     with session_factory() as db:
-        user = User(
-            full_name="Legacy Reviewer",
-            email=f"legacy-{db_path.stem}@example.com",
-            phone="9876543210",
-            password_hash="not-a-real-hash",
+        db.execute(
+            text(
+                "INSERT INTO users (full_name, email, phone, password_hash, is_active, "
+                "token_version, created_at) VALUES (:name, :email, :phone, :hash, 1, 1, CURRENT_TIMESTAMP)"
+            ),
+            {"name": "Legacy Reviewer", "email": f"legacy-{db_path.stem}@example.com",
+             "phone": "9876543210", "hash": "not-a-real-hash"},
         )
-        db.add(user)
-        db.flush()
+        user_id = db.execute(text("SELECT id FROM users WHERE email = :email"),
+                             {"email": f"legacy-{db_path.stem}@example.com"}).scalar()
         movie_id = None
         if with_confirmed_booking:
-            show_id = seed_minimal_show(db)
-            show = db.get(Show, show_id)
-            movie_id = show.movie_id
-            db.add(Booking(
-                booking_reference=f"LEGACY-{db_path.stem}"[:32],
-                user_id=user.id,
-                show_id=show_id,
-                status="CONFIRMED",
-                total_amount=500,
-                payment_method="MOCK",
-                payment_status="PAID",
+            # Portable (no RETURNING): insert then look up.
+            db.execute(text("INSERT INTO movies (title, metadata_json) VALUES ('Legacy Movie', '{}')"))
+            movie_id = db.execute(text("SELECT id FROM movies WHERE title = 'Legacy Movie'")).scalar()
+            db.execute(text(
+                "INSERT INTO cities (name) VALUES ('Legacy City')"
             ))
+            city_id = db.execute(text("SELECT id FROM cities WHERE name = 'Legacy City'")).scalar()
+            db.execute(text(
+                "INSERT INTO theaters (city_id, name, address) VALUES (:city, 'Legacy Theater', 'Addr')"
+            ), {"city": city_id})
+            theater_id = db.execute(text("SELECT id FROM theaters")).scalar()
+            db.execute(text(
+                "INSERT INTO screens (theater_id, name) VALUES (:theater, 'Screen 1')"
+            ), {"theater": theater_id})
+            screen_id = db.execute(text("SELECT id FROM screens")).scalar()
+            db.execute(text(
+                "INSERT INTO shows (movie_id, screen_id, show_date, show_time, status) "
+                "VALUES (:movie, :screen, DATE('now'), '18:30:00', 'ACTIVE')"
+            ), {"movie": movie_id, "screen": screen_id})
+            show_id = db.execute(text("SELECT id FROM shows")).scalar()
+            db.execute(text(
+                "INSERT INTO bookings (booking_reference, user_id, show_id, status, total_amount, "
+                "payment_method, payment_status, created_at) VALUES (:ref, :uid, :show, 'CONFIRMED', "
+                "500, 'MOCK', 'PAID', CURRENT_TIMESTAMP)"
+            ), {"ref": f"LEGACY-{db_path.stem}"[:32], "uid": user_id, "show": show_id})
         db.execute(
             text(
                 "INSERT INTO reviews (user_id, rating, title, body, spoiler, created_at) "
                 "VALUES (:uid, 7, 'Legacy', 'legacy body', 0, CURRENT_TIMESTAMP)"
             ),
-            {"uid": user.id},
+            {"uid": user_id},
         )
         db.commit()
     engine.dispose()

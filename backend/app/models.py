@@ -13,6 +13,18 @@ class SeatCategory(str, Enum):
     SILVER = "Silver"
     BRONZE = "Bronze"
 
+class UserRole(str, Enum):
+    """Extensible RBAC role.
+
+    Phase 8 ships ``USER``/``ADMIN`` only; the string column + enum leave
+    room for future ``MODERATOR``/``STAFF`` values without schema churn.
+    The database is authoritative — roles never live in JWT claims.
+    """
+
+    USER = "USER"
+    ADMIN = "ADMIN"
+
+
 class ShowSeatStatus(str, Enum):
     AVAILABLE = "AVAILABLE"
     HELD = "HELD"
@@ -59,6 +71,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     phone: Mapped[str] = mapped_column(String(20))
     password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(20), default=UserRole.USER.value, nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     token_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -70,6 +83,7 @@ class Movie(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(200), unique=True)
     metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     shows = relationship("Show", back_populates="movie")
     reviews = relationship("Review", back_populates="movie", cascade="all, delete-orphan")
 
@@ -254,4 +268,25 @@ class ContactMessage(Base):
     email: Mapped[str] = mapped_column(String(255))
     subject: Mapped[str] = mapped_column(String(120))
     message: Mapped[str] = mapped_column(Text)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AdminAuditLog(Base):
+    """Append-only record of administrative mutations (Phase 8).
+
+    ``admin_user_id`` is SET NULL on user deletion (users are never
+    hard-deleted, but the FK must not block history). ``metadata_json`` holds
+    small operational context only — never passwords, tokens, or secrets.
+    """
+
+    __tablename__ = "admin_audit_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    action: Mapped[str] = mapped_column(String(60), index=True)
+    resource_type: Mapped[str] = mapped_column(String(60), index=True)
+    resource_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

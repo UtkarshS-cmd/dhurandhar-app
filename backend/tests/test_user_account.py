@@ -30,7 +30,8 @@ def _stored_user(email):
 def test_register_returns_safe_user_and_versioned_jwt(client):
     user, body = _register(client)
 
-    assert set(body["user"]) == {"id", "full_name", "email", "phone"}
+    assert set(body["user"]) == {"id", "full_name", "email", "phone", "role"}
+    assert body["user"]["role"] == "USER"
     assert "password_hash" not in body["user"]
     assert user["password"] not in str(body)
     claims = jwt.decode(body["access_token"], os.environ["JWT_SECRET"], algorithms=["HS256"])
@@ -68,7 +69,8 @@ def test_me_requires_authentication_and_returns_only_safe_own_profile(client):
     own_profile = client.get("/api/me", headers=_auth(body["access_token"]))
 
     assert unauthenticated.status_code == 401
-    assert set(own_profile.json()) == {"id", "full_name", "email", "phone"}
+    assert set(own_profile.json()) == {"id", "full_name", "email", "phone", "role"}
+    assert own_profile.json()["role"] == "USER"
     assert own_profile.json()["email"] == user["email"]
     assert user["password"] not in own_profile.text
     assert all(key not in own_profile.json() for key in ("password_hash", "token_version", "is_active"))

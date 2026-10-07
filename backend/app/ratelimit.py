@@ -57,6 +57,12 @@ RATE_LIMITS: dict[str, RateLimit] = {
     # Per IP: abuse protection for public form endpoints.
     "newsletter": RateLimit(max_requests=5, window_seconds=3600),
     "contact": RateLimit(max_requests=5, window_seconds=3600),
+    # Phase 8 admin boundaries (per authenticated admin session key where
+    # possible; the dependency below keys on IP + user id for writes and IP
+    # for reads so one noisy dashboard cannot starve another admin).
+    "admin_read": RateLimit(max_requests=120, window_seconds=60),
+    "admin_write": RateLimit(max_requests=30, window_seconds=60),
+    "admin_dashboard": RateLimit(max_requests=30, window_seconds=60),
 }
 
 # Defensive bound so a long-running process cannot accumulate unbounded keys.

@@ -290,7 +290,77 @@ backend/.venv/Scripts/python check_assets.py
 > must never be committed. Webhook signature verification is mandatory in
 > production.**
 
-## Deferred findings (intentionally left for later phases)
+## Phase 8 — Admin system & RBAC
+
+### Server-side role model
+
+- `users.role` is a DB-authoritative `USER | ADMIN` enum (migration
+  `f3a91c2d7e44_phase8_admin_rbac`). The role is **not** in the JWT — every
+  request re-reads it from the database, so demotions take effect immediately
+  (demotion/deactivation also bumps `token_version`, invalidating all existing
+  tokens for that user).
+- `app/deps.py::require_admin` gates every `/api/admin/*` route:
+  `401` for anonymous callers, `403` for authenticated non-admins.
+  The frontend hides the Admin nav button unless `/api/me` reports
+  `role == "ADMIN"` — that check is UX-only; the API never trusts it.
+
+### Admin API namespace (all under `/api/admin`)
+
+| Router | Endpoints |
+| --- | --- |
+| `admin/dashboard.py` | `GET /dashboard` — COUNT/SUM aggregations (users, shows, bookings, revenue, unread messages…) |
+| `admin/users.py` | list/detail, `POST …/activate`, `POST …/deactivate`, `PATCH …/{id}` (role change) |
+| `admin/movies*.py` | list/create/detail/patch (incl. `is_active` publish toggle) |
+| `admin/venues*.py` | `GET/POST /cities`, `GET/POST/PATCH /theaters` |
+| `admin/shows*.py` | list/create/detail/patch, `POST …/{id}/cancel` |
+| `admin/bookings.py` | read-only list/detail (no mutation endpoints by design) |
+| `admin/payments.py` | read-only `GET /payments`, `GET /payment-attempts/{id}` (webhook events; **no secrets/PII**) |
+| `admin/reviews.py` | list + `DELETE /{id}` (moderation, audited) |
+| `admin/ops.py` | contact messages (list/read-toggle), newsletter subscribers |
+| `admin/audit_logs.py` | read-only, paginated `GET /audit-logs` |
+
+Guard rails enforced server-side:
+
+- **Last-admin protection** — the final active ADMIN cannot be demoted or
+  deactivated; admins cannot demote/deactivate themselves.
+- **Role/activation writes bump `token_version`** so the target's JWT dies at once.
+- **Show mutation 409 guards** — shows with held/booked seats or active
+  bookings reject update/cancel.
+- **Pagination everywhere** — `page` (≥1) + `page_size` (≤100) with `items/total`.
+- **Audit logging** — every mutating admin action stages an append-only row in
+  `admin_audit_logs` in the *same* transaction as the mutation (a rolled-back
+  mutation never leaves a false audit trail); secret-looking metadata keys are
+  stripped by `admin/common.py::audit`.
+- **Rate limits** — `admin_read` / `admin_write` / `admin_dashboard` buckets
+  on top of the existing auth-limiter infrastructure.
+
+### Bootstrap (no admin exists on a fresh DB)
+
+```bash
+# promote an existing user by e-mail (idempotent):
+backend/.venv/Scripts/python backend/admin_bootstrap.py --email you@example.com
+# or via env var:
+ADMIN_EMAIL=you@example.com backend/.venv/Scripts/python backend/admin_bootstrap.py
+```
+
+The script never creates users or prints secrets; running it twice is safe.
+Migration backfill assigns `USER` to all pre-existing accounts.
+
+### Frontend console
+
+- `js/features/admin.js` — tabbed Admin Console modal (dashboard cards,
+  users table with search/pagination/activate-deactivate, movies publish
+  toggle + create, shows cancel, bookings search, payments detail, review
+  moderation, contact read-toggles, audit log).
+- `js/api.js` exposes typed `admin*` wrappers over the single API door
+  (`core/api-client.js`) — errors surface through `friendlyMessage()` like
+  every other feature (401/403/409/422/429 all handled, double-submit
+  guarded by `runExclusive`).
+- All rendering uses `textContent`/`el()` (no `innerHTML` with API data);
+  nav visibility flips from `onSessionChange` + a `/api/me` refresh.
+- `css/admin.css` mirrors the existing profile/bookings modal pattern.
+
+
 
 Issues identified during the Phase 2 security review that belong to later phases:
 
@@ -299,4 +369,4 @@ Issues identified during the Phase 2 security review that belong to later phases
 - **Rate limiter is per-process** — in-memory counters do not coordinate across multiple workers/instances and reset on restart; the `RateLimiter` seam is designed for a Redis-backed replacement in the production infrastructure phase.
 - **No global request-body size cap** — individual Pydantic fields are bounded, but a reverse proxy should cap total body size in production.
 - **Proxy-aware client IP** — rate limits key on the direct connection address; wire trusted forwarded headers when a reverse proxy is introduced.
-- **Refunds UI, admin/RBAC, review moderation, cancellation redesign, Redis, PostgreSQL tuning, CI/CD** — out of scope by design (later phases). Live Razorpay SDK order creation, refunds execution and admin payment dashboards are Phase 5+; Phase 4 ships the provider boundary, webhook settlement and idempotency.
+- **Refunds UI, cancellation redesign, Redis, PostgreSQL tuning, CI/CD** — out of scope by design (later phases). Live Razorpay SDK order creation, refunds execution are Phase 5+; Phase 4 ships the provider boundary, webhook settlement and idempotency. **Admin/RBAC and review moderation shipped in Phase 8** (see above).
