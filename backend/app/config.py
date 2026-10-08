@@ -65,6 +65,9 @@ def _normalize_database_url(url: str) -> str:
         # SQLAlchemy ≥1.4 requires the ``postgresql://`` scheme; Render and
         # some providers still emit ``postgres://``.
         url = "postgresql://" + url[len("postgres://"):]
+    # SQLAlchemy 2.0 / psycopg3 driver: prefix must carry +psycopg.
+    if url.startswith("postgresql://") and "+psycopg" not in url:
+        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
     if url.startswith("sqlite:"):
         # Bare ``sqlite:///relative.db``, ``sqlite:///./x.db`` and absolute
         # paths (POSIX or Windows drive) are all accepted.

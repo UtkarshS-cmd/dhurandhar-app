@@ -39,7 +39,7 @@ def upgrade() -> None:
             batch_op.add_column(sa.Column("is_active", sa.Boolean(), nullable=False,
                                           server_default=sa.true()))
         batch_op.create_index(batch_op.f("ix_movies_is_active"), ["is_active"], unique=False)
-    conn.execute(sa.text("UPDATE movies SET is_active = 1 WHERE is_active IS NULL"))
+    conn.execute(sa.text("UPDATE movies SET is_active = TRUE WHERE is_active IS NULL"))
 
     with op.batch_alter_table("contact_messages") as batch_op:
         contact_cols = {c["name"] for c in inspector.get_columns("contact_messages")}
@@ -47,7 +47,7 @@ def upgrade() -> None:
             batch_op.add_column(sa.Column("is_read", sa.Boolean(), nullable=False,
                                           server_default=sa.false()))
         batch_op.create_index(batch_op.f("ix_contact_messages_is_read"), ["is_read"], unique=False)
-    conn.execute(sa.text("UPDATE contact_messages SET is_read = 0 WHERE is_read IS NULL"))
+    conn.execute(sa.text("UPDATE contact_messages SET is_read = FALSE WHERE is_read IS NULL"))
 
     if "admin_audit_logs" not in inspector.get_table_names():
         op.create_table(
