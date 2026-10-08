@@ -1,5 +1,5 @@
 
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timezone
 from enum import Enum
 from sqlalchemy import (
     String, Integer, DateTime, Date, Time, ForeignKey, Numeric, Boolean,
@@ -7,6 +7,21 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
+
+
+def utcnow_naive() -> datetime:
+    """Current UTC time as a *naive* datetime.
+
+    Storage contract: every ``DateTime`` column in this schema is naive UTC
+    (SQLite has no timezone type, and the booking engine compares
+    ``hold_expires_at`` against an injectable naive clock). New code must use
+    this helper instead of the deprecated ``utcnow_naive()`` — identical
+    return value (``datetime.now(timezone.utc).replace(tzinfo=None)``), no
+    deprecation warning, and no naive/aware comparison risk. Migrating the
+    stored columns to timezone-aware types would touch every migration, the
+    seed data, and the mock-clock seam; that is intentionally out of scope.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 class SeatCategory(str, Enum):
     GOLD = "Gold"
@@ -74,7 +89,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default=UserRole.USER.value, nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     token_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
     bookings = relationship("Booking", back_populates="user")
     reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
 
@@ -146,7 +161,7 @@ class Booking(Base):
     payment_method: Mapped[str] = mapped_column(String(60), default="MOCK")
     payment_status: Mapped[str] = mapped_column(String(20), default=PaymentStatus.PENDING.value)
     hold_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
     user = relationship("User", back_populates="bookings")
     show = relationship("Show")
     booking_seats = relationship("BookingSeat", back_populates="booking", cascade="all, delete-orphan")
@@ -199,8 +214,8 @@ class PaymentAttempt(Base):
     attempt_no: Mapped[int] = mapped_column(Integer, default=1)
     failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
     booking = relationship("Booking", back_populates="payment_attempts")
     __table_args__ = (
         UniqueConstraint("booking_id", "attempt_no", name="uq_payment_attempt_no"),
@@ -224,7 +239,7 @@ class PaymentWebhookEvent(Base):
         ForeignKey("payment_attempts.id", ondelete="SET NULL"), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(String(20), default=WebhookEventStatus.RECEIVED.value, index=True)
-    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     __table_args__ = (UniqueConstraint("provider", "event_id", name="uq_webhook_provider_event"),)
 
@@ -237,8 +252,8 @@ class Review(Base):
     title: Mapped[str] = mapped_column(String(160))
     body: Mapped[str] = mapped_column(Text)
     spoiler: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
     user = relationship("User", back_populates="reviews")
     movie = relationship("Movie", back_populates="reviews")
     __table_args__ = (
@@ -251,7 +266,7 @@ class ReviewLike(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     review_id: Mapped[int] = mapped_column(ForeignKey("reviews.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
     __table_args__ = (UniqueConstraint("review_id", "user_id", name="uq_review_user_like"),)
 
 class NewsletterSubscriber(Base):
@@ -259,7 +274,7 @@ class NewsletterSubscriber(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
 
 class ContactMessage(Base):
     __tablename__ = "contact_messages"
@@ -269,7 +284,7 @@ class ContactMessage(Base):
     subject: Mapped[str] = mapped_column(String(120))
     message: Mapped[str] = mapped_column(Text)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
 
 
 class AdminAuditLog(Base):
@@ -289,4 +304,4 @@ class AdminAuditLog(Base):
     resource_type: Mapped[str] = mapped_column(String(60), index=True)
     resource_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     metadata_json: Mapped[str] = mapped_column(Text, default="{}")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, index=True)

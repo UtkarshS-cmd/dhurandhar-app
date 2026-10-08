@@ -100,6 +100,7 @@ from sqlalchemy import select, func, text
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
+from ..models import utcnow_naive
 from ..models import (
     Booking,
     BookingSeat,
@@ -122,7 +123,7 @@ HOLD_TTL = timedelta(minutes=10)
 # Clock seam — tests inject a controllable clock instead of sleeping.
 # ---------------------------------------------------------------------------
 
-_clock_fn = datetime.utcnow
+_clock_fn = utcnow_naive
 
 
 def utcnow() -> datetime:
@@ -139,7 +140,7 @@ def set_clock(fn) -> None:
 def reset_clock() -> None:
     """Restore the real wall clock (test teardown)."""
     global _clock_fn
-    _clock_fn = datetime.utcnow
+    _clock_fn = utcnow_naive
 
 
 # ---------------------------------------------------------------------------
@@ -300,9 +301,15 @@ def _is_lock_contention(exc: Exception) -> bool:
         msg = str(exc).lower()
         return "locked" in msg or "busy" in msg
     if isinstance(exc, DBAPIError):
-        # PostgreSQL: 40001 serialization_failure, 40P01 deadlock_detected.
+        # PostgreSQL only (never IntegrityError/domain errors):
+        # 40001 serialization_failure, 40P01 deadlock_detected,
+        # 55P03 lock_not_available (lock_timeout).
         orig = getattr(exc, "orig", None)
-        return getattr(orig, "pgcode", None) in ("40001", "40P01")
+        pgcode = getattr(orig, "pgcode", None)
+        if pgcode in ("40001", "40P01", "55P03"):
+            return True
+        msg = str(exc).lower()
+        return "deadlock detected" in msg or "could not serialize access" in msg
     return False
 
 

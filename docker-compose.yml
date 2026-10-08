@@ -12,17 +12,53 @@ services:
       APP_ENV: production
       JWT_SECRET: ${JWT_SECRET:-}
       # Absolute-path SQLite inside the container; persisted via the named volume.
-      DATABASE_URL: sqlite:////data/dhurandhar.db
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/dhurandhar.db}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-1800}
+      DB_CONNECT_TIMEOUT: ${DB_CONNECT_TIMEOUT:-10}
       PAYMENT_MODE: ${PAYMENT_MODE:-mock}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5000,http://127.0.0.1:5000}
     volumes:
       - db-data:/data
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:5000/api/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
 
+  # Optional PostgreSQL for development/integration work.
+  # Default `docker compose up` still uses SQLite; opt in with:
+  #   docker compose --profile postgres up -d
+  # then point the app at it, e.g.:
+  #   DATABASE_URL=postgresql+psycopg://dhurandhar:dhurandhar-dev-pw@localhost:5432/dhurandhar
+  postgres:
+    image: postgres:16
+    profiles:
+      - postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dhurandhar}
+      POSTGRES_USER: ${POSTGRES_USER:-dhurandhar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dhurandhar-dev-pw}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dhurandhar} -d ${POSTGRES_DB:-dhurandhar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
 volumes:
   db-data:
+  pg-data:
+

@@ -147,6 +147,26 @@ def cleanup_expired_holds(db: Session):
 def health():
     return {"status": "ok", "payment_mode": settings.payment_mode}
 
+
+@app.get("/api/ready")
+def ready():
+    """Lightweight database readiness probe (Render / compose healthchecks).
+
+    Returns ``{"status": "ready"}`` when a trivial ``SELECT 1`` succeeds.
+    Never exposes DATABASE_URL, credentials, connection strings, or raw SQL
+    errors — failures collapse to a uniform 503 ``{"status": "not_ready"}``.
+    """
+    from sqlalchemy import text
+
+    from .db import engine
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception:
+        raise HTTPException(status_code=503, detail="not_ready")
+    return {"status": "ready"}
+
 @app.post("/api/auth/register", response_model=AuthOut, status_code=201,
           dependencies=[Depends(rate_limit("register"))])
 def register(payload: UserCreate, db: Session = Depends(get_db)):
@@ -210,7 +230,7 @@ def show_seats(show_id: int, db: Session = Depends(get_db)):
         .where(ShowSeat.show_id == show_id)
         .order_by(Seat.row_label, Seat.seat_number)
     ).all()
-    now = datetime.utcnow()
+    now = utcnow_naive()
     result=[]
     for ss, seat in rows:
         st=ss.status

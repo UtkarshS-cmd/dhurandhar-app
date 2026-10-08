@@ -201,6 +201,23 @@ class Settings:
         _resolve_app_env(os.getenv("APP_ENV")), os.getenv("JWT_SECRET")
     ))
 
+    # ---------------------------------------------------------------------------
+    # PostgreSQL connection pooling (conservative; SQLite always bypasses these).
+    #
+    # Read from the environment at Settings instantiation time so each deployment
+    # (Render, Docker, local dev) can override them. ``db_pool_size`` and
+    # ``db_max_overflow`` bound the total simultaneous connections; Render
+    # free-tier Postgres commonly exposes only a handful of connections, so the
+    # defaults are deliberately small. ``db_connect_timeout`` guards the initial
+    # handshake, and ``db_pool_recycle`` closes long-lived connections before
+    # they become stale or are rejected by the database (rotation, idle limits).
+    # ---------------------------------------------------------------------------
+    db_pool_size: int = field(default_factory=lambda: int(os.getenv("DB_POOL_SIZE", "5")))
+    db_max_overflow: int = field(default_factory=lambda: int(os.getenv("DB_MAX_OVERFLOW", "5")))
+    db_pool_timeout: int = field(default_factory=lambda: int(os.getenv("DB_POOL_TIMEOUT", "30")))
+    db_pool_recycle: int = field(default_factory=lambda: int(os.getenv("DB_POOL_RECYCLE", "1800")))
+    db_connect_timeout: int = field(default_factory=lambda: int(os.getenv("DB_CONNECT_TIMEOUT", "10")))
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
