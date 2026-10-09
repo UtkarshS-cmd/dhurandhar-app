@@ -1,9 +1,22 @@
 .git
+.github
+.vscode
 **/__pycache__
 *.pyc
+.pytest_cache
+backend/.pytest_cache
 backend/.venv
+backend/*.db
 backend/dhurandhar.db
 backend/.env
+# Frontend tooling/artifacts — the image serves static files only.
+node_modules
+package-lock.json
+test-results
+playwright-report
+pw_run.log
+pw_run.err
+e2e
 temp
 bat_test.log
 data

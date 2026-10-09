@@ -1,0 +1,51 @@
+name: Deploy
+
+# Phase 13 — continuous delivery to Render.
+#
+# The repo already ships a Render blueprint (render.yaml: Docker web service +
+# managed Postgres) and a production Dockerfile (migrate → seed → uvicorn).
+# Render's native GitHub integration deploys automatically when connected; this
+# workflow is the alternative/complement: a deploy hook triggered after CI is
+# green on main.
+#
+# Setup (no secrets in the repo):
+#   1. Render → Environment → "Deploy Hook" for the dhurandhar-cinema service,
+#      copy the URL.
+#   2. GitHub → Settings → Secrets → New: RENDER_DEPLOY_HOOK_URL.
+#   If the secret is absent the job skips cleanly, so the workflow is safe to
+#   ship before the Render account exists.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Trigger Render deploy hook
+    runs-on: ubuntu-latest
+    # Only after a successful CI run on main (workflow_dispatch stays manual).
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    steps:
+      - name: Check for the deploy hook secret
+        id: hook
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::RENDER_DEPLOY_HOOK_URL is not configured — skipping deploy (set it in repo secrets to enable CD)."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger Render deploy
+        if: steps.hook.outputs.present == 'true'
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: curl --fail --silent --show-error --max-time 30 --request POST "$DEPLOY_HOOK_URL"

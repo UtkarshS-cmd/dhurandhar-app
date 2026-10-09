@@ -117,6 +117,84 @@ Coverage: smoke (page load, navigation, health, gzip, security headers), authent
 
 The E2E environment sets `RATE_LIMIT_ENABLED=false` (single-IP browser run would otherwise trip the anti-flood counters); backend tests keep the limiter **on** by default and cover it.
 
+## Deployment (Phase 13)
+
+The app deploys as a **single process/image** that serves the static frontend (`index.html`, `css/`, `js/`, `assets/`) and the FastAPI backend together — no separate static host, no CDN wiring required.
+
+### What ships
+
+| Artifact | Purpose |
+| --- | --- |
+| `Dockerfile` | Production image: `alembic upgrade head` → `python seed.py` (idempotent) → `uvicorn` on `$PORT` (default 5000). `APP_ENV=production` enforces a real `JWT_SECRET` at startup — it refuses to boot with a placeholder. |
+| `docker-compose.yml` | One-command local prod run (SQLite on a named volume by default; `--profile postgres` adds a throwaway PG). Health-checked `web` service. |
+| `render.yaml` | Render blueprint: Docker web service + managed Postgres, `DATABASE_URL`/`JWT_SECRET` wired automatically, health check `/api/health`. |
+| `Procfile` | Generic process type (migrate → seed → serve) for Heroku-style hosts. |
+| `.github/workflows/deploy.yml` | CD: after CI is green on `main`, POSTs the Render **deploy hook** (secret `RENDER_DEPLOY_HOOK_URL`; workflow skips cleanly until the secret exists). |
+
+### Local production rehearsal (no Docker needed)
+
+```bash
+# generate a real secret, run the exact startup sequence the image runs:
+export JWT_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+cd backend
+alembic upgrade head && python seed.py \
+  && APP_ENV=production JWT_SECRET=$JWT_SECRET uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Render
+
+1. Push the repo to GitHub, then Render → **New → Blueprint** → select it; `render.yaml` creates the web service + Postgres and wires `DATABASE_URL`, `JWT_SECRET` (generated), `APP_ENV=production`, `PAYMENT_MODE=mock`.
+2. First deploy runs migrations + seed from the image CMD; `/api/health` is the readiness gate.
+3. Promote an operator once the site is up (idempotent, by e-mail — see Phase 8 bootstrap):
+   `ADMIN_EMAIL=you@example.com python backend/admin_bootstrap.py`
+
+### Environment matrix
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `APP_ENV` | yes (`production` on Render) | Fails fast on missing/insecure `JWT_SECRET` in production |
+| `JWT_SECRET` | yes (≥ 32 chars) | `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `DATABASE_URL` | no (SQLite default) | `postgresql://…` accepted (Render emits `postgres://`, normalized) |
+| `PAYMENT_MODE` | no (`mock`) | Set `razorpay` + `RAZORPAY_KEY_ID/SECRET/WEBHOOK_SECRET` for live payments |
+| `CORS_ORIGINS` | no (same-origin) | Explicit origins only; `*` is rejected while credentialed requests are allowed |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / … | no | Conservative defaults sized for Render free-tier Postgres |
+| `RATE_LIMIT_ENABLED` | no (`true`) | Leave unset in production; only the E2E/CI runner disables it |
+### Phase 14 — production verification (complete)
+
+Produced `verify_production.py` — a read-only (opt-in `--register`) HTTP probe
+suite with a **pass/fail gate** against any deployed URL.
+
+**What was verified** (against a production-mode rehearsal of the exact image
+startup on a fresh DB):
+
+| Check | Result |
+| --- | --- |
+| Fail-fast: `APP_ENV=production` with no JWT_SECRET refuses to boot (exit 1) | ✅ |
+| Start image command (`alembic upgrade head` → `seed.py` → `uvicorn` with real `JWT_SECRET`) boots clean | ✅ |
+| `/api/health` → `{"status":"ok","payment_mode":"mock"}` | ✅ 200 |
+| `/api/ready` (Render/compose healthcheck) → `{"status":"ready"}` | ✅ |
+| Static files served by the same process (`/`, `/css/styles.css`) | ✅ |
+| Migrations + seed ran (cities table present: 10 seeded rows) | ✅ |
+| Security headers = smoke spec exactly (`nosniff` / `DENY` / CSP `default-src 'self'`) | ✅ |
+| GZip envelope negotiable on API responses | ✅ |
+| Anonymous `/api/admin/dashboard` → 401; authenticated non-admin → 403 | ✅ |
+| CORS: no reflection of untrusted origins (`'*'`/`Access-Control-Allow-Origin` absent for non-configured Origin) | ✅ |
+| Register → `/api/me` → admin 403 → newsletter write round-trip | ✅ |
+| **Total: 13/13 PASS** (0.8 s), no environment outside the image | ✅ |
+
+**Run:**
+```bash
+# against any deployment (read-only):
+python verify_production.py https://dhurandhar.onrender.com
+# against a local production rehearsal on port 8011 (creates ONE test account):
+python verify_production.py http://127.0.0.1:8011 --register
+```
+
+Production hosting checklist: (1) Render blueprint `render.yaml` deploy — see
+Deployment section; (2) `RENDER_DEPLOY_HOOK_URL` set on GitHub → CD auto-deploys
+after every green `main` CI run; (3) README Deployment environment matrix is
+authoritative for variable names and constraints.
+
 ## Phase 3 — booking engine (transactional correctness)
 
 `backend/app/services/booking.py` is the single authority for booking state:
