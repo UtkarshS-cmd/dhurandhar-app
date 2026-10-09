@@ -52,6 +52,10 @@ module.exports = defineConfig({
       JWT_SECRET: process.env.E2E_JWT_SECRET || 'e2e-only-secret-not-used-in-production-000000',
       APP_ENV: 'development',
       PAYMENT_MODE: 'mock',
+      // Every browser test registers/logs in from 127.0.0.1; with limits on,
+      // the mobile project would trip the register anti-flood counter (8/h)
+      // mid-run. Backend pytest keeps limits ON (default) and covers them.
+      RATE_LIMIT_ENABLED: 'false',
       CORS_ORIGINS: `http://localhost:${PORT},http://127.0.0.1:${PORT}`,
     },
   },

@@ -22,7 +22,7 @@ MIN_JWT_SECRET_LENGTH = 32
 ALLOWED_APP_ENVS = frozenset({"development", "production", "test"})
 DEFAULT_DEV_CORS_ORIGINS = ("http://localhost:5000", "http://127.0.0.1:5000")
 _ENV_KEYS = ("DATABASE_URL", "JWT_SECRET", "PAYMENT_MODE", "PAYMENT_PROVIDER", "CORS_ORIGINS", "APP_ENV",
-             "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET")
+             "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET", "RATE_LIMIT_ENABLED")
 
 
 def _load_dotenv() -> None:
@@ -91,6 +91,22 @@ def _resolve_app_env(raw: str | None) -> str:
             + ", ".join(sorted(ALLOWED_APP_ENVS))
         )
     return value
+
+
+def _resolve_bool_flag(raw: str | None, default: bool) -> bool:
+    """Parse an on/off environment flag (``RATE_LIMIT_ENABLED`` style).
+
+    Unset or unrecognized values keep ``default`` so a typo can never silently
+    disable a security control — only an explicit falsy token turns it off.
+    """
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in ("0", "false", "no", "off"):
+        return False
+    if value in ("1", "true", "yes", "on"):
+        return True
+    return default
 
 
 def _resolve_jwt_secret(app_env: str, raw: str | None) -> str:
@@ -199,6 +215,13 @@ class Settings:
     ))
     jwt_secret: str = field(default_factory=lambda: _resolve_jwt_secret(
         _resolve_app_env(os.getenv("APP_ENV")), os.getenv("JWT_SECRET")
+    ))
+    # Master switch for the in-process rate limiter. ON by default; the E2E/CI
+    # suite disables it (RATE_LIMIT_ENABLED=false) because every browser test
+    # registers from one IP and would otherwise trip the anti-flood limits
+    # mid-run. Production deployments must leave it unset (or true).
+    rate_limit_enabled: bool = field(default_factory=lambda: _resolve_bool_flag(
+        os.getenv("RATE_LIMIT_ENABLED"), True
     ))
 
     # ---------------------------------------------------------------------------

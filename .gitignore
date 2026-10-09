@@ -25,3 +25,4 @@ _migrate_test/
 _full_test.txt
 backend/tests/pytest_out.txt
 backend/test_output.txt
+pw_run.err

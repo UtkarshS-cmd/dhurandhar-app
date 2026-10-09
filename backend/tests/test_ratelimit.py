@@ -160,3 +160,43 @@ def test_newsletter_flood_returns_429(client):
                 for _ in range(limit + 1)]
     assert statuses[:-1] == [201] * limit
     assert statuses[-1] == 429
+
+
+def test_rate_limit_master_switch_bypasses_enforcement(client, monkeypatch):
+    """RATE_LIMIT_ENABLED=false (E2E/CI) must bypass the limiter entirely.
+
+    The flood tests above prove the default (enabled) path; this proves the
+    switch a single-IP browser suite depends on, without ever flipping the
+    process-wide default: only the injected ``settings`` object is replaced
+    and monkeypatch restores it after the test.
+    """
+    from dataclasses import replace
+
+    from app import ratelimit
+
+    assert ratelimit.settings.rate_limit_enabled is True  # production default
+    monkeypatch.setattr(
+        ratelimit, "settings",
+        replace(ratelimit.settings, rate_limit_enabled=False),
+    )
+    limit = RATE_LIMITS["newsletter"].max_requests
+    payload = {"name": "Gate Off", "email": "gate-off@example.com"}
+    statuses = [client.post("/api/newsletter", json=payload).status_code
+                for _ in range(limit + 3)]
+    assert all(s == 201 for s in statuses)
+
+
+def test_bool_flag_resolver_defaults_are_safe():
+    from app.config import _resolve_bool_flag
+
+    # Unset or garbage keeps the default (never silently disables a control).
+    assert _resolve_bool_flag(None, True) is True
+    assert _resolve_bool_flag("", True) is True
+    assert _resolve_bool_flag("banana", True) is True
+    assert _resolve_bool_flag(None, False) is False
+    # Explicit tokens only.
+    assert _resolve_bool_flag("false", True) is False
+    assert _resolve_bool_flag("0", True) is False
+    assert _resolve_bool_flag("OFF", True) is False
+    assert _resolve_bool_flag("true", False) is True
+    assert _resolve_bool_flag("yes", False) is True

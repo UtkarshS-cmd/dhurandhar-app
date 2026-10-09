@@ -24,6 +24,8 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
 
+from .config import settings
+
 
 @dataclass(frozen=True)
 class RateLimit:
@@ -164,6 +166,11 @@ def rate_limit(name: str, key: str = "ip"):
     limit = RATE_LIMITS[name]
 
     async def dependency(request: Request) -> None:
+        # Master switch (Settings.rate_limit_enabled). Default ON; the E2E/CI
+        # suite sets RATE_LIMIT_ENABLED=false because every browser test hits
+        # the app from a single IP and would flood the anti-flood counters.
+        if not settings.rate_limit_enabled:
+            return
         client = _client_ip(request)
         if key == "identity":
             limiter_key = f"{name}|{client}|{await _body_email(request)}"
