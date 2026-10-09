@@ -38,15 +38,17 @@ export async function loginUser(api, user) {
 
 /** Seed an authenticated browser session (localStorage) and load the page. */
 export async function loginInBrowser(page, { token, account }) {
-  await page.goto('/');
-  await page.evaluate(
+  // Session is loaded once at JS boot (core/state.js), so seed storage first,
+  // then load — a goto()+evaluate()+reload() can land before modules execute
+  // and wipe the half-written pair via loadInitial's signed-out cleanup.
+  await page.addInitScript(
     ({ token, account }) => {
       localStorage.setItem('dhurandhar_token', token);
       localStorage.setItem('dhurandhar_user', JSON.stringify(account));
     },
     { token, account },
   );
-  await page.reload();
+  await page.goto('/');
 }
 
 /** Open the booking modal from the header. */
