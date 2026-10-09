@@ -16,8 +16,8 @@ import { expect, request as pwRequest } from '@playwright/test';
 const REPO_ROOT = path.resolve(__dirname, '..');
 const BACKEND_DIR = path.join(REPO_ROOT, 'backend');
 
-// The webServer (e2e/e2e-server.cmd) cd's into backend/ before starting
-// uvicorn, so a relative sqlite:///./ URL in the config resolves there.
+// The webServer (e2e/e2e-server.cjs) starts uvicorn with cwd=backend, so a
+// relative sqlite:///./ URL in the config resolves there.
 function e2eDatabaseUrl() {
   return process.env.E2E_DATABASE_URL || 'sqlite:///./dhurandhar_e2e_test.db';
 }
@@ -30,6 +30,8 @@ function e2eDatabasePath() {
 }
 
 function backendPython() {
+  // CI sets E2E_PYTHON to the runner's interpreter (no venv on disk there).
+  if (process.env.E2E_PYTHON) return process.env.E2E_PYTHON;
   const candidates = process.platform === 'win32'
     ? [path.join(BACKEND_DIR, '.venv', 'Scripts', 'python.exe'), 'python']
     : [path.join(BACKEND_DIR, '.venv', 'bin', 'python3'), 'python3', 'python'];

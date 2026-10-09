@@ -40,9 +40,10 @@ module.exports = defineConfig({
   ],
   webServer: {
     // Isolated E2E SQLite DB, mock payments, permissive-but-explicit CORS.
-    // Windows CreateProcess cannot execute a .cmd directly, so run it via
-    // cmd.exe with an absolute path; e2e-server.cmd resolves the venv itself.
-    command: `cmd /c "${path.join(__dirname, 'e2e', 'e2e-server.cmd')}"`,
+    // Cross-platform Node launcher (spawns uvicorn from backend/); the old
+    // .cmd wrapper only worked on Windows. E2E_PYTHON overrides the
+    // interpreter for CI, where no backend/.venv exists.
+    command: `node "${path.join(__dirname, 'e2e', 'e2e-server.cjs')}"`,
     cwd: '.',
     url: `${BASE_URL}/api/health`,
     reuseExistingServer: !process.env.CI,

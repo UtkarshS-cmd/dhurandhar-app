@@ -82,6 +82,41 @@ backend/.venv/Scripts/python -m pytest backend/tests -v   # Windows
 
 The suite covers the Phase 1 baseline plus Phase 2 security tests: JWT/auth edge cases, configuration policy, security headers, CORS, rate limiting, booking-reference strength and authorization boundaries.
 
+### PostgreSQL integration suite (Phase 9)
+
+The `backend/tests/postgres/` suite never falls back to SQLite. It needs a throwaway PostgreSQL and refuses to run without an explicit URL:
+
+```bash
+# start any disposable postgres, then:
+export POSTGRES_TEST_DATABASE_URL='postgresql+psycopg://user:pw@localhost:5432/dhurandhar_test'
+cd backend && python -m pytest tests/postgres -v
+```
+
+In CI this runs against a `postgres:16-alpine` service container (see `.github/workflows/ci.yml`), so the suite is exercised on every push even when no local Docker is available.
+
+### End-to-end tests (Phase 11)
+
+Playwright drives a **real** uvicorn server (started automatically by `playwright.config.cjs`) against an isolated SQLite database with mock payments — never a real provider or a real charge:
+
+```bash
+npm install
+npm run test:e2e:install   # one-time: download Chromium + OS deps
+npm run test:e2e           # starts the server itself; no manual step
+```
+
+Coverage: smoke (page load, navigation, health, gzip, security headers), authentication (UI register/login/logout, session reload, uniform 401s), the booking wizard end-to-end through mock settlement, and admin RBAC (hidden entry point for regular users, dashboard stats for `role=ADMIN`, server-side 401/403). Desktop and mobile Chromium projects both run.
+
+### Continuous integration (Phase 12)
+
+`.github/workflows/ci.yml` runs on every push/PR to `main`:
+
+| Job | What it proves |
+| --- | --- |
+| `backend` | Full pytest suite (SQLite) **plus** the PostgreSQL integration suite via a `postgres:16-alpine` service container |
+| `e2e` | Full Playwright suite on Linux (the webServer launcher is cross-platform Node) |
+
+The E2E environment sets `RATE_LIMIT_ENABLED=false` (single-IP browser run would otherwise trip the anti-flood counters); backend tests keep the limiter **on** by default and cover it.
+
 ## Phase 3 — booking engine (transactional correctness)
 
 `backend/app/services/booking.py` is the single authority for booking state:
