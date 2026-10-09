@@ -1,0 +1,13 @@
+{
+  "name": "dhurandhar-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dhurandhar Cinema website — vanilla HTML/CSS/JS frontend + FastAPI backend.",
+  "scripts": {
+    "test:e2e": "node node_modules/@playwright/test/cli.js test",
+    "test:e2e:install": "node node_modules/@playwright/test/cli.js install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}

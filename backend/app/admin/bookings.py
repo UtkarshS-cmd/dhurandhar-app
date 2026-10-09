@@ -18,35 +18,75 @@ router = APIRouter(prefix="/api/admin/bookings", tags=["admin-bookings"])
 
 
 def _serialize(db: Session, booking: Booking) -> dict:
-    user = db.get(User, booking.user_id) if booking.user_id else None
-    show = db.get(Show, booking.show_id)
-    movie_title = theater_name = screen_name = None
-    show_date = show_time = None
-    if show:
-        movie = db.get(Movie, show.movie_id)
-        screen = db.get(Screen, show.screen_id)
-        movie_title = movie.title if movie else None
-        screen_name = screen.name if screen else None
-        show_date, show_time = show.show_date, show.show_time
-        if screen:
-            theater = db.get(Theater, screen.theater_id)
-            theater_name = theater.name if theater else None
-    seat_rows = (db.scalars(select(Seat).join(BookingSeat, BookingSeat.seat_id == Seat.id)
-                            .where(BookingSeat.booking_id == booking.id)
-                            .order_by(Seat.row_label.asc(), Seat.seat_number.asc())).all())
-    labels = [f"{s.row_label}{s.seat_number}" for s in seat_rows]
-    return {
-        "id": booking.id, "booking_reference": booking.booking_reference,
-        "user_id": booking.user_id,
-        "user_name": user.full_name if user else None,
-        "user_email": user.email if user else None,
-        "show_id": booking.show_id, "movie_title": movie_title,
-        "theater_name": theater_name, "screen_name": screen_name,
-        "show_date": show_date, "show_time": show_time,
-        "seats": labels, "status": booking.status,
-        "payment_method": booking.payment_method, "payment_status": booking.payment_status,
-        "total_amount": booking.total_amount, "created_at": booking.created_at,
-    }
+    return _serialize_many(db, [booking])[0]
+
+
+def _serialize_many(db: Session, bookings: list[Booking]) -> list[dict]:
+    """Serialize bookings with a bounded number of queries (no per-row N+1).
+
+    One page costs exactly 5 queries regardless of page size: users, shows,
+    seat labels, movies/screens, theaters. The single-booking detail endpoint
+    reuses the same path with a one-element list.
+    """
+    if not bookings:
+        return []
+    user_ids = sorted({b.user_id for b in bookings if b.user_id})
+    show_ids = sorted({b.show_id for b in bookings})
+    booking_ids = [b.id for b in bookings]
+    users = (
+        {u.id: u for u in db.scalars(select(User).where(User.id.in_(user_ids))).all()}
+        if user_ids
+        else {}
+    )
+    show_rows = (
+        db.execute(
+            select(Show, Movie.title, Screen.name, Screen.theater_id)
+            .join(Movie, Show.movie_id == Movie.id)
+            .join(Screen, Show.screen_id == Screen.id)
+            .where(Show.id.in_(show_ids))
+        ).all()
+        if show_ids
+        else []
+    )
+    shows = {show.id: (show, movie_title, screen_name, theater_id) for show, movie_title, screen_name, theater_id in show_rows}
+    theater_ids = sorted({theater_id for _, _, _, theater_id in show_rows})
+    theaters = (
+        {t.id: t.name for t in db.scalars(select(Theater).where(Theater.id.in_(theater_ids))).all()}
+        if theater_ids
+        else {}
+    )
+    seat_rows = db.execute(
+        select(BookingSeat.booking_id, Seat.row_label, Seat.seat_number)
+        .join(Seat, BookingSeat.seat_id == Seat.id)
+        .where(BookingSeat.booking_id.in_(booking_ids))
+        .order_by(Seat.row_label.asc(), Seat.seat_number.asc())
+    ).all()
+    labels: dict[int, list[str]] = {bid: [] for bid in booking_ids}
+    for booking_id, row_label, seat_number in seat_rows:
+        labels.setdefault(booking_id, []).append(f"{row_label}{seat_number}")
+    items = []
+    for booking in bookings:
+        user = users.get(booking.user_id) if booking.user_id else None
+        show = shows.get(booking.show_id)
+        movie_title = theater_name = screen_name = None
+        show_date = show_time = None
+        if show is not None:
+            show_row, movie_title, screen_name, theater_id = show
+            show_date, show_time = show_row.show_date, show_row.show_time
+            theater_name = theaters.get(theater_id)
+        items.append({
+            "id": booking.id, "booking_reference": booking.booking_reference,
+            "user_id": booking.user_id,
+            "user_name": user.full_name if user else None,
+            "user_email": user.email if user else None,
+            "show_id": booking.show_id, "movie_title": movie_title,
+            "theater_name": theater_name, "screen_name": screen_name,
+            "show_date": show_date, "show_time": show_time,
+            "seats": labels.get(booking.id, []), "status": booking.status,
+            "payment_method": booking.payment_method, "payment_status": booking.payment_status,
+            "total_amount": booking.total_amount, "created_at": booking.created_at,
+        })
+    return items
 
 
 @router.get("", dependencies=[Depends(rate_limit("admin_read"))])
@@ -80,7 +120,7 @@ def list_bookings(
     query = query.order_by(Booking.created_at.desc(), Booking.id.desc())
     total = int(db.scalar(count_query) or 0)
     rows = db.scalars(query.offset((page - 1) * page_size).limit(page_size)).all()
-    return paginate([_serialize(db, b) for b in rows], total, page, page_size)
+    return paginate(_serialize_many(db, rows), total, page, page_size)
 
 
 @router.get("/{booking_id}", dependencies=[Depends(rate_limit("admin_read"))])

@@ -8,7 +8,7 @@ screen's seat map. Mutation guards live in ``shows_write.py``.
 from datetime import date, time as dtime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -68,8 +68,22 @@ def list_shows(
     query = query.order_by(Show.show_date.desc(), Show.show_time.desc(), Show.id.desc())
     total = int(db.scalar(count_query) or 0)
     rows = db.execute(query.offset((page - 1) * page_size).limit(page_size)).all()
+    show_ids = [show.id for show, _, _, _ in rows]
+    counts: dict[int, tuple[int, int]] = {}
+    if show_ids:
+        # One GROUP BY for the whole page instead of 2 COUNT queries per row.
+        agg = db.execute(
+            select(
+                ShowSeat.show_id,
+                func.sum(case((ShowSeat.status == ShowSeatStatus.HELD.value, 1), else_=0)).label("held"),
+                func.sum(case((ShowSeat.status == ShowSeatStatus.BOOKED.value, 1), else_=0)).label("booked"),
+            )
+            .where(ShowSeat.show_id.in_(show_ids))
+            .group_by(ShowSeat.show_id)
+        ).all()
+        counts = {show_id: (int(held or 0), int(booked or 0)) for show_id, held, booked in agg}
     items = []
     for show, movie_title, theater_name, screen_name in rows:
-        held, booked = _seat_counts(db, show.id)
+        held, booked = counts.get(show.id, (0, 0))
         items.append(_serialize_show(show, movie_title, theater_name, screen_name, held, booked))
     return paginate(items, total, page, page_size)

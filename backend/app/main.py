@@ -7,6 +7,7 @@ from typing import Literal
 from fastapi import FastAPI, Depends, HTTPException, status, Header, Request, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, or_, func
@@ -19,7 +20,7 @@ from .deps import current_user, optional_current_user, require_admin
 from .models import (
     User, Movie, City, Theater, Screen, Seat, Show, ShowSeat,
     Booking, BookingSeat, PaymentAttempt, Review, ReviewLike, NewsletterSubscriber, ContactMessage,
-    ShowSeatStatus, BookingStatus, PaymentStatus
+    ShowSeatStatus, BookingStatus, PaymentStatus, utcnow_naive
 )
 from .schemas import *
 from .security import (
@@ -64,6 +65,13 @@ from .admin import venues as admin_venues
 from .admin import venues_update as _admin_venues_update  # noqa: F401
 
 app = FastAPI(title="Dhurandhar Cinema API", version="1.0.0")
+
+# GZip compresses JSON API payloads and static JS/CSS when the client sends
+# ``Accept-Encoding: gzip``. Added before CORS/security middleware so the whole
+# response (including headers) is compressed. minimum_size=500 keeps tiny
+# responses (e.g. ``/api/health``) uncompressed — compression overhead is not
+# worth it below this threshold and orchestrator probes stay cheap.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.include_router(admin_dashboard.router)
 app.include_router(admin_users.router)
@@ -155,13 +163,17 @@ def ready():
     Returns ``{"status": "ready"}`` when a trivial ``SELECT 1`` succeeds.
     Never exposes DATABASE_URL, credentials, connection strings, or raw SQL
     errors — failures collapse to a uniform 503 ``{"status": "not_ready"}``.
+    The statement timeout keeps a wedged pool from hanging orchestrators.
     """
     from sqlalchemy import text
 
     from .db import engine
 
     try:
+        timeout_ms = 2000
         with engine.connect() as conn:
+            if engine.dialect.name == "postgresql":
+                conn = conn.execution_options(statement_timeout=timeout_ms)
             conn.execute(text("SELECT 1"))
     except Exception:
         raise HTTPException(status_code=503, detail="not_ready")
@@ -200,11 +212,15 @@ def available_dates():
 
 @app.get("/api/cities")
 def cities(db: Session = Depends(get_db)):
-    return [{"id": c.id, "name": c.name} for c in db.scalars(select(City).order_by(City.name)).all()]
+    # Small reference table; still hard-capped so a data anomaly can never
+    # turn this into an unbounded full-table payload.
+    return [{"id": c.id, "name": c.name} for c in db.scalars(select(City).order_by(City.name).limit(500)).all()]
 
 @app.get("/api/theaters")
 def theaters(city_id: int, db: Session = Depends(get_db)):
-    rows = db.scalars(select(Theater).where(Theater.city_id == city_id).order_by(Theater.name)).all()
+    if city_id < 1:
+        raise HTTPException(422, "city_id must be a positive integer")
+    rows = db.scalars(select(Theater).where(Theater.city_id == city_id).order_by(Theater.name).limit(200)).all()
     return [{"id": t.id, "name": t.name, "address": t.address} for t in rows]
 
 @app.get("/api/shows", response_model=list[ShowOut])
@@ -279,10 +295,22 @@ def create_hold(payload: BookingCreateRequest, db: Session = Depends(get_db)):
 
 def booking_out(db: Session, booking: Booking) -> BookingOut:
     seats=db.scalars(select(Seat).join(BookingSeat,BookingSeat.seat_id==Seat.id).where(BookingSeat.booking_id==booking.id).order_by(Seat.row_label,Seat.seat_number)).all()
+    return _booking_out_from_seats(booking, seats)
+
+
+def _booking_out_from_seats(booking: Booking, seats: list[Seat]) -> BookingOut:
     return BookingOut(
         booking_reference=booking.booking_reference,status=booking.status,payment_status=booking.payment_status,
         total_amount=Decimal(booking.total_amount),show_id=booking.show_id,
         seats=[f"{s.row_label}{s.seat_number}" for s in seats],created_at=booking.created_at,hold_expires_at=booking.hold_expires_at
+    )
+
+
+def _booking_out_from_labels(booking: Booking, labels: list[str]) -> BookingOut:
+    return BookingOut(
+        booking_reference=booking.booking_reference,status=booking.status,payment_status=booking.payment_status,
+        total_amount=Decimal(booking.total_amount),show_id=booking.show_id,
+        seats=list(labels),created_at=booking.created_at,hold_expires_at=booking.hold_expires_at
     )
 
 @app.post("/api/bookings/{reference}/confirm", response_model=BookingOut,
@@ -474,8 +502,22 @@ def change_password(payload: PasswordChangeRequest, db: Session = Depends(get_db
 @app.get("/api/me/bookings", response_model=list[BookingOut])
 def my_bookings(db: Session=Depends(get_db), user: User=Depends(current_user)):
     cleanup_expired_holds(db)
-    rows=db.scalars(select(Booking).where(Booking.user_id==user.id).order_by(Booking.created_at.desc())).all()
-    return [booking_out(db,b) for b in rows]
+    # Newest 50 only: the full history stays queryable by booking reference.
+    # (The response stays a bare list for backward compatibility.)
+    rows=db.scalars(select(Booking).where(Booking.user_id==user.id).order_by(Booking.created_at.desc(), Booking.id.desc()).limit(50)).all()
+    if not rows:
+        return []
+    # One seat-label query for the page (no per-booking N+1).
+    seat_rows = db.execute(
+        select(BookingSeat.booking_id, Seat.row_label, Seat.seat_number)
+        .join(Seat, BookingSeat.seat_id == Seat.id)
+        .where(BookingSeat.booking_id.in_([b.id for b in rows]))
+        .order_by(Seat.row_label, Seat.seat_number)
+    ).all()
+    labels: dict[int, list[str]] = {b.id: [] for b in rows}
+    for booking_id, row_label, seat_number in seat_rows:
+        labels.setdefault(booking_id, []).append(f"{row_label}{seat_number}")
+    return [_booking_out_from_labels(b, labels.get(b.id, [])) for b in rows]
 
 VALID_REVIEW_SORTS = {"newest", "oldest", "highest", "lowest", "most_liked"}
 
@@ -533,7 +575,10 @@ def reviews(
 ):
     if sort not in VALID_REVIEW_SORTS:
         raise HTTPException(422, "Invalid sort")
-    total = db.scalar(select(func.count()).select_from(Review))
+    # One aggregate query serves total + average (previously 2 round-trips).
+    stats = db.execute(select(func.count(Review.id), func.avg(Review.rating))).first()
+    total = int(stats[0] or 0)
+    average_rating = round(float(stats[1] or 0), 2) if total else 0.0
     stmt = (
         select(Review, User, func.coalesce(func.count(ReviewLike.id), 0).label("like_count"))
         .join(User, Review.user_id == User.id)
@@ -579,7 +624,7 @@ def reviews(
         "limit": limit,
         "total": total or 0,
         "has_more": total > page * limit,
-        "average_rating": round((db.scalar(select(func.avg(Review.rating))) or 0), 2) if total else 0.0,
+        "average_rating": average_rating,
         "total_reviews": total or 0,
     }
 
